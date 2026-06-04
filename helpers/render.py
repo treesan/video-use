@@ -107,6 +107,15 @@ def resolve_path(maybe_path: str, base: Path) -> Path:
 
 HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}  # PQ (HDR10) and HLG
 
+# zscale-based HDR→SDR chain. Requires ffmpeg built with --enable-libzimg
+# (Homebrew: `brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-zimg`).
+# Pipeline:
+#   1. zscale t=linear:        move HLG/PQ transfer into linear light
+#   2. format gbrpf32le:       feed 32-bit float to tonemap
+#   3. zscale p=bt709:         set primaries to BT.709 (target gamut)
+#   4. tonemap=hable:desat=0:  map HDR to SDR (Hable is robust for HLG)
+#   5. zscale t=bt709 ... r=tv:force BT.709 transfer with TV range
+#   6. format yuv420p:         8-bit for libx264
 TONEMAP_CHAIN = (
     "zscale=t=linear:npl=100,"
     "format=gbrpf32le,"
@@ -176,13 +185,18 @@ def extract_segment(
     else:
         scale = "scale=-2:1920" if portrait else "scale=1920:-2"
 
+    # Build the filter graph piece by piece, then defensively strip empty
+    # strings before joining. Without this, an empty TONEMAP_CHAIN (e.g. when
+    # the ffmpeg build lacks zscale and the project is falling back to no-op
+    # HDR handling) produces ",scale=..." with a leading comma that ffmpeg
+    # rejects with "Filter not found".
     vf_parts: list[str] = []
-    if is_hdr_source(source):
+    if is_hdr_source(source) and TONEMAP_CHAIN:
         vf_parts.append(TONEMAP_CHAIN)
     vf_parts.append(scale)
     if grade_filter:
         vf_parts.append(grade_filter)
-    vf = ",".join(vf_parts)
+    vf = ",".join(p for p in vf_parts if p)
 
     # 30ms audio fades at both edges (Rule 3) — prevent pops
     fade_out_start = max(0.0, duration - 0.03)

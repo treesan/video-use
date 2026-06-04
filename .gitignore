@@ -16,6 +16,7 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+test_*
 
 # Virtual environments
 .venv/
@@ -30,6 +31,7 @@ ENV/
 *.swo
 .DS_Store
 Thumbs.db
+.claude
 
 # Node / Remotion (installed on demand, not vendored)
 node_modules/

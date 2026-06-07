@@ -20,7 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from transcribe import load_api_key, transcribe_one
+from transcribe import transcribe_one
 
 
 VIDEO_EXTS = {".mp4", ".MP4", ".mov", ".MOV", ".mkv", ".MKV", ".avi", ".AVI", ".m4v"}
@@ -77,8 +77,6 @@ def main() -> None:
         print("nothing to do")
         return
 
-    api_key = load_api_key()
-
     print(f"transcribing {len(pending)} files with {args.workers} parallel workers")
     t0 = time.time()
 
@@ -89,7 +87,6 @@ def main() -> None:
                 transcribe_one,
                 video=v,
                 edit_dir=edit_dir,
-                api_key=api_key,
                 language=args.language,
                 num_speakers=args.num_speakers,
                 verbose=False,

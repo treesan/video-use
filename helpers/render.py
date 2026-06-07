@@ -30,12 +30,25 @@ from pathlib import Path
 
 try:
     from grade import get_preset, auto_grade_for_clip  # same directory
+    from export_profiles import ExportProfile, get_profile, profile_summary_rows, valid_profile_names
 except Exception:
     def get_preset(name: str) -> str:
         return ""
 
     def auto_grade_for_clip(video, start=0.0, duration=None, verbose=False):  # type: ignore
         return "eq=contrast=1.03:saturation=0.98", {}
+
+    class ExportProfile:  # type: ignore
+        pass
+
+    def get_profile(name: str):  # type: ignore
+        raise ValueError(f"export profiles unavailable; cannot resolve '{name}'")
+
+    def valid_profile_names() -> list[str]:  # type: ignore
+        return []
+
+    def profile_summary_rows() -> list[dict[str, str | int]]:  # type: ignore
+        return []
 
 
 # -------- Subtitle style (bold-overlay, proven at 1920×1080 and 1080×1920) --
@@ -155,6 +168,18 @@ def is_portrait_source(video: Path) -> bool:
         return False
 
 
+def video_encode_args(profile: ExportProfile, preview: bool = False, draft: bool = False) -> list[str]:
+    if draft:
+        return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-pix_fmt", "yuv420p", "-r", str(profile.fps)]
+    if preview:
+        return ["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p", "-r", str(profile.fps)]
+    return profile.ffmpeg_video_args()
+
+
+def audio_encode_args(profile: ExportProfile) -> list[str]:
+    return profile.ffmpeg_audio_args()
+
+
 # -------- Per-segment extraction (Rule 2 + Rule 3) --------------------------
 
 
@@ -164,50 +189,24 @@ def extract_segment(
     duration: float,
     grade_filter: str,
     out_path: Path,
+    profile: ExportProfile,
+    crop_center: dict[str, float] | None = None,
     preview: bool = False,
     draft: bool = False,
 ) -> None:
-    """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in.
-
-    `-ss` before `-i` for fast accurate seeking. Scale to 1080p from 4K.
-    Portrait sources (height > width) are scaled by height to preserve orientation.
-
-    Quality ladder:
-      - final (default): 1080p libx264 fast CRF 20
-      - preview:         1080p libx264 medium CRF 22 (evaluable for QC)
-      - draft:           720p libx264 ultrafast CRF 28 (cut-point check only)
-    """
+    """Extract a cut range as its own MP4 with grade + 30ms audio fades baked in."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    portrait = is_portrait_source(source)
-    if draft:
-        scale = "scale=-2:1280" if portrait else "scale=1280:-2"
-    else:
-        scale = "scale=-2:1920" if portrait else "scale=1920:-2"
-
-    # Build the filter graph piece by piece, then defensively strip empty
-    # strings before joining. Without this, an empty TONEMAP_CHAIN (e.g. when
-    # the ffmpeg build lacks zscale and the project is falling back to no-op
-    # HDR handling) produces ",scale=..." with a leading comma that ffmpeg
-    # rejects with "Filter not found".
     vf_parts: list[str] = []
     if is_hdr_source(source) and TONEMAP_CHAIN:
         vf_parts.append(TONEMAP_CHAIN)
-    vf_parts.append(scale)
+    vf_parts.append(profile.fit_filter(crop_center))
     if grade_filter:
         vf_parts.append(grade_filter)
     vf = ",".join(p for p in vf_parts if p)
 
-    # 30ms audio fades at both edges (Rule 3) — prevent pops
     fade_out_start = max(0.0, duration - 0.03)
     af = f"afade=t=in:st=0:d=0.03,afade=t=out:st={fade_out_start:.3f}:d=0.03"
-
-    if draft:
-        preset, crf = "ultrafast", "28"
-    elif preview:
-        preset, crf = "medium", "22"
-    else:
-        preset, crf = "fast", "20"
 
     cmd = [
         "ffmpeg", "-y",
@@ -216,9 +215,8 @@ def extract_segment(
         "-t", f"{duration:.3f}",
         "-vf", vf,
         "-af", af,
-        "-c:v", "libx264", "-preset", preset, "-crf", crf,
-        "-pix_fmt", "yuv420p", "-r", "24",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        *video_encode_args(profile, preview=preview, draft=draft),
+        *audio_encode_args(profile),
         "-movflags", "+faststart",
         str(out_path),
     ]
@@ -228,6 +226,7 @@ def extract_segment(
 def extract_all_segments(
     edl: dict,
     edit_dir: Path,
+    profile: ExportProfile,
     preview: bool,
     draft: bool = False,
 ) -> list[Path]:
@@ -269,7 +268,7 @@ def extract_all_segments(
         print(f"  [{i:02d}] {src_name}  {start:7.2f}-{end:7.2f}  ({duration:5.2f}s)  {note}")
         if is_auto:
             print(f"        grade: {seg_filter or '(none)'}")
-        extract_segment(src_path, start, duration, seg_filter, out_path, preview=preview, draft=draft)
+        extract_segment(src_path, start, duration, seg_filter, out_path, profile, r.get("crop_center"), preview=preview, draft=draft)
         seg_paths.append(out_path)
 
     return seg_paths
@@ -445,6 +444,7 @@ def measure_loudness(video_path: Path) -> dict[str, str] | None:
 def apply_loudnorm_two_pass(
     input_path: Path,
     output_path: Path,
+    profile: ExportProfile,
     preview: bool = False,
 ) -> bool:
     """Run two-pass loudnorm on input_path, write normalized copy to output_path.
@@ -463,7 +463,7 @@ def apply_loudnorm_two_pass(
             "-i", str(input_path),
             "-c:v", "copy",
             "-af", filter_str,
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            *audio_encode_args(profile),
             "-movflags", "+faststart",
             str(output_path),
         ]
@@ -476,7 +476,7 @@ def apply_loudnorm_two_pass(
     measurement = measure_loudness(input_path)
     if measurement is None:
         print("  loudnorm measurement failed — falling back to 1-pass")
-        return apply_loudnorm_two_pass(input_path, output_path, preview=True)
+        return apply_loudnorm_two_pass(input_path, output_path, profile, preview=True)
 
     print(f"    measured: I={measurement['input_i']} LUFS  "
           f"TP={measurement['input_tp']}  LRA={measurement['input_lra']}")
@@ -495,7 +495,7 @@ def apply_loudnorm_two_pass(
         "-i", str(input_path),
         "-c:v", "copy",
         "-af", filter_str,
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+        *audio_encode_args(profile),
         "-movflags", "+faststart",
         str(output_path),
     ]
@@ -513,6 +513,9 @@ def build_final_composite(
     subtitles_path: Path | None,
     out_path: Path,
     edit_dir: Path,
+    profile: ExportProfile,
+    preview: bool = False,
+    draft: bool = False,
 ) -> None:
     """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
 
@@ -572,8 +575,7 @@ def build_final_composite(
         "-filter_complex", filter_complex,
         "-map", out_label,
         "-map", "0:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-pix_fmt", "yuv420p",
+        *video_encode_args(profile, preview=preview, draft=draft),
         "-c:a", "copy",
         "-movflags", "+faststart",
         str(out_path),
@@ -584,6 +586,141 @@ def build_final_composite(
 
 
 # -------- Main ---------------------------------------------------------------
+
+
+def resolve_audio_policy(edl: dict, cli_policy: str | None) -> str:
+    policy = cli_policy or (edl.get("export") or {}).get("audio_policy")
+    if policy is None:
+        bgm_config = edl.get("bgm") or {}
+        return "duck" if bgm_config.get("duck_voiceover", True) else "mix"
+    valid = {"bgm_only", "duck", "mix", "source_only", "silent"}
+    if policy not in valid:
+        raise ValueError(f"unknown audio policy '{policy}'. Valid policies: {', '.join(sorted(valid))}")
+    return policy
+
+
+def strip_audio(video_path: Path, out_path: Path) -> None:
+    run(["ffmpeg", "-y", "-i", str(video_path), "-map", "0:v:0", "-c:v", "copy", "-an", str(out_path)], quiet=True)
+
+
+def mix_bgm(
+    video_path: Path,
+    bgm_config: dict,
+    out_path: Path,
+    edit_dir: Path,
+    profile: ExportProfile,
+    audio_policy: str,
+) -> None:
+    """Mix BGM into the video's audio track.
+
+    If the video has no audio stream (e.g. silent drone footage), BGM becomes
+    the sole audio track. Otherwise, original audio and BGM are mixed with
+    optional voiceover ducking (sidechaincompress).
+
+    BGM config schema (from edl.json "bgm" field):
+        file: str           — path to BGM audio file
+        start_offset: float — seconds to skip in BGM (default 0)
+        volume: float       — BGM volume 0.0-1.0 (default 0.3)
+        duck_voiceover: bool— lower BGM when original audio is present (default True)
+        fade_in: float      — BGM fade-in duration in seconds (default 2.0)
+        fade_out: float     — BGM fade-out duration in seconds (default 3.0)
+    """
+    bgm_file = resolve_path(bgm_config["file"], edit_dir)
+    if not bgm_file.exists():
+        print(f"  warning: BGM file not found: {bgm_file}, skipping BGM mix")
+        run(["ffmpeg", "-y", "-i", str(video_path), "-c", "copy", str(out_path)], quiet=True)
+        return
+
+    volume = bgm_config.get("volume", 0.3)
+    start_offset = bgm_config.get("start_offset", 0.0)
+    fade_in = bgm_config.get("fade_in", 2.0)
+    fade_out = bgm_config.get("fade_out", 3.0)
+    duck = bgm_config.get("duck_voiceover", True)
+
+    # Get video duration
+    dur_out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+        capture_output=True, text=True, check=True,
+    )
+    video_dur = float(dur_out.stdout.strip())
+
+    # Check if video has audio
+    has_audio_out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a",
+         "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(video_path)],
+        capture_output=True, text=True,
+    )
+    has_audio = bool(has_audio_out.stdout.strip())
+
+    # Build BGM audio filter chain
+    # Clamp fades so they never overlap
+    actual_fade_in = min(fade_in, video_dur / 2)
+    actual_fade_out = min(fade_out, video_dur / 2)
+    bgm_af_parts: list[str] = []
+    if start_offset > 0:
+        bgm_af_parts.append(f"atrim=start={start_offset}")
+    bgm_af_parts.append(f"afade=t=in:st=0:d={actual_fade_in}")
+    fade_out_start = max(0.0, video_dur - actual_fade_out)
+    bgm_af_parts.append(f"afade=t=out:st={fade_out_start:.3f}:d={actual_fade_out}")
+    bgm_af_parts.append(f"volume={volume}")
+    bgm_af = ",".join(bgm_af_parts)
+
+    if audio_policy == "bgm_only" or not has_audio:
+        filter_complex = f"[1:a]{bgm_af}[bgm]"
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-stream_loop", "-1", "-i", str(bgm_file),
+            "-filter_complex", filter_complex,
+            "-map", "0:v:0", "-map", "[bgm]",
+            "-c:v", "copy",
+            *audio_encode_args(profile),
+            "-t", f"{video_dur:.3f}",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+    elif audio_policy == "duck":
+        filter_complex = (
+            f"[0:a]volume=1.0[orig];"
+            f"[1:a]{bgm_af}[bgm];"
+            f"[bgm][orig]sidechaincompress=threshold=0.1:ratio=10"
+            f":attack=0.01:release=0.5:makeup=1[ducked];"
+            f"[orig][ducked]amix=inputs=2:duration=first:dropout_transition=3[mixed]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-stream_loop", "-1", "-i", str(bgm_file),
+            "-filter_complex", filter_complex,
+            "-map", "0:v:0", "-map", "[mixed]",
+            "-c:v", "copy",
+            *audio_encode_args(profile),
+            "-t", f"{video_dur:.3f}",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+    else:
+        filter_complex = (
+            f"[0:a]volume=1.0[orig];"
+            f"[1:a]{bgm_af}[bgm];"
+            f"[orig][bgm]amix=inputs=2:duration=first:dropout_transition=3[mixed]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_path),
+            "-stream_loop", "-1", "-i", str(bgm_file),
+            "-filter_complex", filter_complex,
+            "-map", "0:v:0", "-map", "[mixed]",
+            "-c:v", "copy",
+            *audio_encode_args(profile),
+            "-t", f"{video_dur:.3f}",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+
+    print(f"  mixing BGM: policy={audio_policy}, volume={volume}, fade_in={fade_in}s, fade_out={fade_out}s")
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
 def main() -> None:
@@ -615,7 +752,32 @@ def main() -> None:
         action="store_true",
         help="Skip audio loudness normalization. Default is on (-14 LUFS, -1 dBTP, LRA 11).",
     )
+    ap.add_argument(
+        "--profile",
+        default=None,
+        help="Export profile name. Default: EDL export.default_profile or legacy_1080p24_landscape.",
+    )
+    ap.add_argument(
+        "--audio-policy",
+        choices=["bgm_only", "duck", "mix", "source_only", "silent"],
+        default=None,
+        help="Override EDL export.audio_policy.",
+    )
+    ap.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List available export profiles and exit.",
+    )
     args = ap.parse_args()
+
+    if args.list_profiles:
+        print("name\tresolution\tfps\tcodec\torientation\tplatform")
+        for row in profile_summary_rows():
+            print(
+                f"{row['name']}\t{row['resolution']}\t{row['fps']}\t"
+                f"{row['codec']}\t{row['orientation']}\t{row['platform']}"
+            )
+        return
 
     edl_path = args.edl.resolve()
     if not edl_path.exists():
@@ -624,10 +786,19 @@ def main() -> None:
     edl = json.loads(edl_path.read_text())
     edit_dir = edl_path.parent
     out_path = args.output.resolve()
+    export_config = edl.get("export") or {}
+    profile_name = args.profile or export_config.get("default_profile") or "legacy_1080p24_landscape"
+    try:
+        profile = get_profile(profile_name)
+        audio_policy = resolve_audio_policy(edl, args.audio_policy)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    print(f"export profile: {profile.name} ({profile.resolution}, {profile.fps}fps, {profile.codec})")
+    print(f"audio policy: {audio_policy}")
 
     # 1. Extract per-segment (auto-grade per range if EDL grade is "auto")
     segment_paths = extract_all_segments(
-        edl, edit_dir, preview=args.preview, draft=args.draft
+        edl, edit_dir, profile, preview=args.preview, draft=args.draft
     )
 
     # 2. Concat → base
@@ -652,18 +823,38 @@ def main() -> None:
                 print(f"warning: subtitles path in EDL does not exist: {subs_path}")
                 subs_path = None
 
-    # 4. Composite (overlays + subtitles LAST) → intermediate (pre-loudnorm) path
+    # 4. Composite (overlays + subtitles LAST)
     overlays = edl.get("overlays") or []
-    if args.no_loudnorm:
-        # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir)
-    else:
-        # Composite to a temp file, then run loudnorm → final output
-        tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir)
-        print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
-        apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
+    bgm_config = edl.get("bgm")
+
+    # Use a consistent temp path for the pre-loudnorm intermediate
+    tmp_composite = out_path.with_suffix(".prenorm.mp4")
+
+    if audio_policy == "silent":
+        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, profile, preview=args.preview, draft=args.draft)
+        strip_audio(tmp_composite, out_path)
         tmp_composite.unlink(missing_ok=True)
+        loudnorm_src = None
+    elif bgm_config and audio_policy != "source_only":
+        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, profile, preview=args.preview, draft=args.draft)
+        tmp_mixed = edit_dir / "_bgm_mixed.mp4"
+        print("mixing BGM …")
+        mix_bgm(tmp_composite, bgm_config, tmp_mixed, edit_dir, profile, audio_policy)
+        tmp_composite.unlink(missing_ok=True)
+        loudnorm_src = tmp_mixed
+    else:
+        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, profile, preview=args.preview, draft=args.draft)
+        loudnorm_src = tmp_composite
+
+    # 5. Loudness normalization
+    if loudnorm_src is not None:
+        if args.no_loudnorm:
+            run(["ffmpeg", "-y", "-i", str(loudnorm_src), "-c", "copy", str(out_path)], quiet=True)
+            loudnorm_src.unlink(missing_ok=True)
+        else:
+            print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
+            apply_loudnorm_two_pass(loudnorm_src, out_path, profile, preview=args.draft)
+            loudnorm_src.unlink(missing_ok=True)
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"\ndone: {out_path} ({size_mb:.1f} MB)")

@@ -15,6 +15,10 @@ Drop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works
 - **30ms audio fades** at every cut so you never hear a pop
 - **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
 - **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
+- **Highlight detection** for silent aerial footage — PySceneDetect + OpenCV quality screening + VLM scene description via mimo/doubao/Qwen
+- **BGM auto-search** from Pixabay (no API key needed, anti-crawl bypass) with MiniMax AI generation fallback
+- **Beat-aware editing** — madmom three-way beat detection (downbeat/pitch/mel_energy) + LLM song structure analysis (Intro/Verse/Chorus)
+- **Audio mixing** — BGM + voiceover with auto-ducking, fade in/out, loop/trim, -14 LUFS loudness normalization
 - **Self-evaluates the rendered output** at every cut boundary before showing you anything
 - **Persists session memory** in `project.md` so next week's session picks up where you left off
 
@@ -91,13 +95,118 @@ Same idea as browser-use giving an LLM a structured DOM instead of a screenshot 
 
 ## Pipeline
 
+### Standard (talking heads, interviews)
+
 ```
 Transcribe ──> Pack ──> LLM Reasons ──> EDL ──> Render ──> Self-Eval
                                                               │
                                                               └─ issue? fix + re-render (max 3)
 ```
 
+### Silent aerial footage (DJI drone, travel vlogs)
+
+```
+Highlight Detect ──> Find Music ──> Beat Detect ──> LLM Reasons ──> EDL ──> Render + Mix ──> Self-Eval
+      │                  │               │                                        │
+      │                  │               │                                        └─ issue? fix + re-render
+      │                  │               └─ madmom 3-way beat detection
+      │                  └─ Pixabay search / MiniMax generate
+      └─ PySceneDetect + OpenCV + VLM
+```
+
 The self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.
+
+## New: Highlight Detection & BGM Music
+
+For silent aerial footage (DJI drone, travel vlogs), video-use now includes:
+
+### Highlight Detection (`helpers/highlight_detect.py`)
+
+```bash
+# Detect highlights in silent aerial footage
+python helpers/highlight_detect.py /path/to/videos --theme "travel vlog"
+
+# Skip VLM, use only OpenCV quality scoring
+python helpers/highlight_detect.py /path/to/videos --no-vlm
+```
+
+**4-layer pipeline:**
+1. **PySceneDetect** — shot boundary detection (AdaptiveDetector)
+2. **OpenCV quality pre-screen** — blur (Laplacian), exposure, motion, black frame detection
+3. **VLM scene description** — mimo-v2.5 / doubao-seed / Qwen3.5 via OpenAI-compatible API
+4. **LLM scoring** — highlights ranked by aesthetic quality and theme relevance
+
+### BGM Music (`helpers/find_music.py`)
+
+```bash
+# Search Pixabay for free royalty-free music
+python helpers/find_music.py --style "cinematic travel" --provider pixabay
+
+# Generate via MiniMax AI (fallback)
+python helpers/find_music.py --style "upbeat electronic" --provider minimax
+
+# Auto: try Pixabay first, fall back to MiniMax
+python helpers/find_music.py --style "chill lo-fi" --provider auto
+```
+
+**Providers:**
+- **Pixabay** — free royalty-free music, no API key needed (anti-crawl bypass)
+- **MiniMax** — AI-generated instrumental music via `mmx-cli`
+
+### Beat Detection (`helpers/beat_detect.py`)
+
+```bash
+# Analyze BGM beats and structure
+python helpers/beat_detect.py /path/to/bgm.mp3
+```
+
+**Output:** `beats.json` with BPM, keypoints, song sections (Intro/Verse/Chorus), energy profile, best start offset.
+
+### Audio Mixing (`helpers/mix_audio.py`)
+
+```bash
+# Mix video with BGM
+python helpers/mix_audio.py video.mp4 bgm.mp3 -o output.mp4
+
+# With voiceover ducking
+python helpers/mix_audio.py video.mp4 bgm.mp3 --duck-voiceover -o output.mp4
+```
+
+**Features:** amix, sidechaincompress ducking, fade in/out, loop/trim, -14 LUFS loudness normalization.
+
+## Export profiles
+
+`render.py` can render a single platform profile, and `render_profiles.py` can batch-render every profile declared in `edl.json`:
+
+```bash
+uv run python helpers/render.py <videos_dir>/edit/edl.json \
+  -o <videos_dir>/edit/final.mp4 \
+  --profile bilibili_1080p60_landscape
+
+uv run python helpers/render_profiles.py <videos_dir>/edit/edl.json \
+  --profiles bilibili_4k60_landscape,douyin_1080p60_portrait
+```
+
+Built-in profiles include Bilibili 4K/1080p landscape, Douyin portrait, Xiaohongshu portrait/3:4, and 1080p120 horizontal/vertical variants. Batch exports write:
+
+```text
+<videos_dir>/edit/exports/<profile>.mp4
+<videos_dir>/edit/exports/<profile>.json
+```
+
+The JSON report validates resolution, fps, EDL duration, audio presence, black frames, and long silence. EDLs can declare defaults:
+
+```json
+{
+  "export": {
+    "profiles": ["bilibili_4k60_landscape", "douyin_1080p60_portrait"],
+    "default_profile": "bilibili_1080p60_landscape",
+    "audio_policy": "bgm_only"
+  }
+}
+```
+
+`audio_policy` supports `bgm_only`, `duck`, `mix`, `source_only`, and `silent`. For scenic drone/travel montages, use `bgm_only` to guarantee source camera audio is discarded and BGM is looped to the full output duration.
 
 ## Design principles
 

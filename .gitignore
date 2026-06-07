@@ -32,12 +32,14 @@ ENV/
 .DS_Store
 Thumbs.db
 .claude
+openspec
 
 # Node / Remotion (installed on demand, not vendored)
 node_modules/
 package-lock.json
 yarn.lock
 .npm/
+uv.lock
 
 # Manim render artifacts (when running skills/manim-video scripts locally)
 media/

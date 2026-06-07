@@ -45,6 +45,10 @@ The skill lives in `video-use/`. User footage lives wherever they put it. All se
     ├── project.md               ← memory; appended every session
     ├── takes_packed.md          ← phrase-level transcripts, the LLM's primary reading view
     ├── edl.json                 ← cut decisions
+    ├── highlights.json          ← highlight detection results (silent aerial footage)
+    ├── beats.json               ← BGM beat/structure analysis
+    ├── bgm.mp3                  ← downloaded or generated background music
+    ├── bgm_meta.json            ← BGM source metadata
     ├── transcripts/<name>.json  ← cached raw Scribe JSON
     ├── animations/slot_<id>/    ← per-animation source + render + reasoning
     ├── clips_graded/            ← per-segment extracts with grade + fades
@@ -77,6 +81,10 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
 - **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
+- **`highlight_detect.py <videos_dir>`** — silent aerial footage highlight detection. PySceneDetect shot boundaries → OpenCV quality pre-screen → VLM scene description → LLM scoring. Outputs `highlights.json`.
+- **`beat_detect.py <bgm_file>`** — BGM beat/structure analysis. madmom three-way detection + LLM song structure + ebur128 energy profile. Outputs `beats.json`.
+- **`find_music.py --style "..."`** — BGM search/generation. Pixabay free music (API or scraping) → MiniMax AI generation fallback. Outputs `bgm.mp3` + `bgm_meta.json`.
+- **`mix_audio.py <video> <bgm>`** — audio mixing. Original + BGM mix, voiceover ducking, fade-in/out, BGM loop/trim, loudnorm -14 LUFS.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
 
@@ -98,6 +106,61 @@ For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a su
 
    If anything fails: fix → re-render → re-eval. **Cap at 3 self-eval passes** — if issues remain after 3, flag them to the user rather than looping forever. Only present the preview once the self-eval passes.
 8. **Iterate + persist.** Natural-language feedback, re-plan, re-render. Never re-transcribe. Final render on confirmation. Append to `project.md`.
+
+## Highlight detection (silent aerial footage)
+
+For DJI drone footage and other silent video with no speech, the audio-first pipeline has nothing to work with. `highlight_detect.py` provides a visual-first alternative:
+
+1. **Run highlight detection.** `python helpers/highlight_detect.py <videos_dir> --theme "旅行Vlog-青海湖"`. The three-layer pipeline runs:
+   - PySceneDetect finds shot boundaries (AdaptiveDetector)
+   - OpenCV pre-screens quality (Laplacian blur + exposure + motion — filters out 30-50% of junk shots)
+   - VLM describes quality-passing shots (native video understanding — video clips sent as base64)
+   - LLM scores and ranks highlights, outputting `highlights.json`
+
+2. **Review highlights.** Read `highlights.json` — it's sorted by score, each entry has `source`/`start`/`end` compatible with edl.json ranges, plus `tags`, `reason`, and `vlm_summary`.
+
+3. **Select and refine.** Pick the highlights that fit the narrative. The `highlights[].source/start/end` can be copied directly into `edl.json` ranges. Adjust boundaries with `timeline_view` at decision points.
+
+4. **Without VLM.** If no VLM API key is available, use `--no-vlm` — scoring falls back to OpenCV quality only. Less semantic, but still filters junk and ranks by technical quality.
+
+**VLM/LLM provider config:** Set `VLM_PROVIDER` in `.env` to `xiaomi` (MiMo v2.5, default) or `minimax` (MiniMax-M3). The corresponding API key (`MIMO_API_KEY` or `MINIMAX_API_KEY`) is required. Provider routing is handled by `helpers/vlm_client.py` — each provider has its own base_url, model, fps range, and video content format.
+
+## BGM scoring (search → beat analysis → mix)
+
+When the video needs background music, use this flow:
+
+1. **Get BGM.** Either the user provides a file, or run `find_music.py`:
+   ```
+   python helpers/find_music.py --style "upbeat cinematic travel" --min-duration 60 --max-duration 180
+   ```
+   Tries Pixabay first (free, royalty-free). Falls back to MiniMax AI generation (`mmx music generate --instrumental`). Outputs `bgm.mp3` + `bgm_meta.json`.
+
+2. **Analyze beats.** `python helpers/beat_detect.py <edit>/bgm.mp3 --target-duration 120`
+   - madmom detects downbeats, pitch onsets, and energy peaks
+   - LLM identifies song sections (Intro/Verse/Chorus/Outro)
+   - ebur128 finds the best start point (skips silent intro)
+   - Outputs `beats.json` with `bpm`, `sections[]`, `keypoints[]`, `best_start`
+
+3. **Plan cuts to beats.** Use `beats.json` keypoints and sections to align cuts with musical structure. Place strong visual moments on downbeats, transitions on section boundaries. The LLM editor brief should reference the beat structure.
+
+4. **Mix audio.** The `edl.json` `bgm` field triggers automatic BGM mixing in `render.py`:
+   ```json
+   "bgm": {
+     "file": "edit/bgm.mp3",
+     "start_offset": 2.5,
+     "volume": 0.3,
+     "duck_voiceover": true,
+     "fade_in": 2.0,
+     "fade_out": 3.0
+   }
+   ```
+   - `duck_voiceover: true` — BGM auto-ducks when original audio (speech) is present via `sidechaincompress`
+   - `start_offset` — skip BGM intro, use `beats.json` `best_start` value
+   - Volume, fade-in, fade-out are taste calls — propose values in the strategy and confirm
+
+   For silent aerial footage: `duck_voiceover` has no effect (no original audio to duck against), BGM becomes the sole audio track.
+
+   The mix happens after compositing (subtitles LAST) and before loudness normalization, maintaining the Hard Rules pipeline order.
 
 ## Cut craft (techniques)
 
@@ -277,6 +340,14 @@ Match the source unless the user asked for something specific. Common targets: `
     {"source": "C0108", "start": 14.30, "end": 28.90,
      "beat": "SOLUTION", "quote": "...", "reason": "Only take without the false start."}
   ],
+  "bgm": {
+    "file": "edit/bgm.mp3",
+    "start_offset": 2.5,
+    "volume": 0.3,
+    "duck_voiceover": true,
+    "fade_in": 2.0,
+    "fade_out": 3.0
+  },
   "grade": "warm_cinematic",
   "overlays": [
     {"file": "edit/animations/slot_1/render.mp4", "start_in_output": 0.0, "duration": 5.0}
@@ -286,7 +357,7 @@ Match the source unless the user asked for something specific. Common targets: `
 }
 ```
 
-`grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST.
+`grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST. `bgm` is optional — when present, BGM is mixed into the audio after compositing and before loudnorm.
 
 ## Memory — `project.md`
 

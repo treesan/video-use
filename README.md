@@ -65,10 +65,23 @@ uv sync                         # 或: pip install -e .
 brew install ffmpeg             # 必须
 brew install yt-dlp             # 可选，用于下载在线素材
 
-# 3. 添加 ElevenLabs API key
+# 3. 添加 API keys
 cp .env.example .env
-$EDITOR .env                    # ELEVENLABS_API_KEY=...
+$EDITOR .env
 ```
+
+`.env` 中的 API keys：
+
+| 变量 | 用途 | 获取方式 |
+|------|------|---------|
+| `ELEVENLABS_API_KEY` | 英文语音转录（ElevenLabs Scribe） | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) |
+| `VOLC_ASR_APP_KEY` | 中文语音转录（火山引擎 BigASR） | 火山引擎控制台 → 语音识别 |
+| `VLM_PROVIDER` | 视觉描述提供商，`xiaomi`（默认）或 `minimax` | — |
+| `MIMO_API_KEY` | 小米 MiMo VLM（当 `VLM_PROVIDER=xiaomi`） | 小米开放平台 |
+| `MINIMAX_API_KEY` | MiniMax VLM + AI 音乐生成（当 `VLM_PROVIDER=minimax`） | [platform.minimaxi.com](https://platform.minimaxi.com) |
+| `PIXABAY_API_KEY` | Pixabay 免版税音乐搜索（可选） | [pixabay.com/api/docs](https://pixabay.com/api/docs/) |
+
+> `ELEVENLABS_API_KEY` 和 `VOLC_ASR_APP_KEY` 至少配一个；`transcribe.py` 会自动选择可用后端。
 
 ## 工作原理
 

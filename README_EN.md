@@ -65,10 +65,23 @@ uv sync                         # or: pip install -e .
 brew install ffmpeg             # required
 brew install yt-dlp             # optional, for downloading online sources
 
-# 3. Add your ElevenLabs API key
+# 3. Add API keys
 cp .env.example .env
-$EDITOR .env                    # ELEVENLABS_API_KEY=...
+$EDITOR .env
 ```
+
+`.env` API keys:
+
+| Variable | Purpose | Where to get |
+|----------|---------|-------------|
+| `ELEVENLABS_API_KEY` | English speech transcription (ElevenLabs Scribe) | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) |
+| `VOLC_ASR_APP_KEY` | Chinese speech transcription (Volcengine BigASR) | Volcengine Console → Speech Recognition |
+| `VLM_PROVIDER` | VLM provider: `xiaomi` (default) or `minimax` | — |
+| `MIMO_API_KEY` | Xiaomi MiMo VLM (when `VLM_PROVIDER=xiaomi`) | Xiaomi Open Platform |
+| `MINIMAX_API_KEY` | MiniMax VLM + AI music generation (when `VLM_PROVIDER=minimax`) | [platform.minimaxi.com](https://platform.minimaxi.com) |
+| `PIXABAY_API_KEY` | Pixabay royalty-free music search (optional) | [pixabay.com/api/docs](https://pixabay.com/api/docs/) |
+
+> At least one of `ELEVENLABS_API_KEY` or `VOLC_ASR_APP_KEY` is required; `transcribe.py` auto-selects the available backend.
 
 ## How it works
 

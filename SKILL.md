@@ -63,7 +63,7 @@ The skill lives in `video-use/`. User footage lives wherever they put it. All se
 
 First-time install lives in `install.md` (clone, deps, ffmpeg, skill registration, API key). Don't re-run it every session; on cold start just verify:
 
-- `ELEVENLABS_API_KEY` resolves — either in the environment or in `.env` at the video-use repo root. If missing, ask the user to paste one and write it to `.env` (never to the user's `<videos_dir>`).
+- `ELEVENLABS_API_KEY` or `VOLC_ASR_APP_KEY` resolves — at least one ASR key must be present. `transcribe.py` auto-selects the backend: ElevenLabs Scribe for English, Volcengine BigASR for Chinese (controlled by `--asr` flag or auto-detect). Keys go in `.env` at the video-use repo root. If both are missing, ask the user to paste one.
 - `ffmpeg` + `ffprobe` on PATH.
 - Python deps installed (`uv sync` or `pip install -e .` inside the repo).
 - Node.js + npm available if the session needs HyperFrames or Remotion slots. HyperFrames currently requires Node.js 22+.
@@ -124,6 +124,8 @@ For DJI drone footage and other silent video with no speech, the audio-first pip
 4. **Without VLM.** If no VLM API key is available, use `--no-vlm` — scoring falls back to OpenCV quality only. Less semantic, but still filters junk and ranks by technical quality.
 
 **VLM/LLM provider config:** Set `VLM_PROVIDER` in `.env` to `xiaomi` (MiMo v2.5, default) or `minimax` (MiniMax-M3). The corresponding API key (`MIMO_API_KEY` or `MINIMAX_API_KEY`) is required. Provider routing is handled by `helpers/vlm_client.py` — each provider has its own base_url, model, fps range, and video content format.
+
+**Pixabay BGM search:** `PIXABAY_API_KEY` is optional — without it, `find_music.py` uses the scraping fallback. MiniMax AI generation requires `mmx-cli` installed and `MINIMAX_API_KEY` set.
 
 ## BGM scoring (search → beat analysis → mix)
 

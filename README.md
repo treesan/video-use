@@ -4,27 +4,27 @@
 
 # video-use
 
-Introducing **video-use** — edit videos with Claude Code. 100% open source.
+**video-use** — 用 Claude Code 剪视频。100% 开源。
 
-Drop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works for any content — talking heads, montages, tutorials, travel, interviews — without presets or menus.
+把原始素材丢进文件夹，跟 Claude Code 对话，拿回 `final.mp4`。适用于任何内容 — 口播、混剪、教程、旅行、访谈 — 没有预设，没有菜单。
 
-## What it does
+## 它能做什么
 
-- **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes
-- **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)
-- **30ms audio fades** at every cut so you never hear a pop
-- **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
-- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
-- **Highlight detection** for silent aerial footage — PySceneDetect + OpenCV quality screening + VLM scene description via mimo/doubao/Qwen
-- **BGM auto-search** from Pixabay (no API key needed, anti-crawl bypass) with MiniMax AI generation fallback
-- **Beat-aware editing** — madmom three-way beat detection (downbeat/pitch/mel_energy) + LLM song structure analysis (Intro/Verse/Chorus)
-- **Audio mixing** — BGM + voiceover with auto-ducking, fade in/out, loop/trim, -14 LUFS loudness normalization
-- **Self-evaluates the rendered output** at every cut boundary before showing you anything
-- **Persists session memory** in `project.md` so next week's session picks up where you left off
+- **剪掉废话**（`嗯`、`啊`、口误重试）和素材间的空白
+- **自动调色**，每一段都上色（暖色电影、中性冲击，或任意自定义 ffmpeg 滤镜链）
+- **30ms 音频淡入淡出**，每个切点都无爆音
+- **烧录字幕**，你的风格 — 默认 2 词大写分块，完全可定制
+- **生成动画叠层**，通过 [HyperFrames](https://github.com/heygen-com/hyperframes)、[Remotion](https://www.remotion.dev/)、[Manim](https://www.manim.community/) 或 PIL — 并行子代理生成，每个动画一个
+- **高光检测**，静音航拍素材 — PySceneDetect + OpenCV 质量筛选 + VLM 场景描述（mimo/doubao/Qwen）
+- **BGM 自动搜索**，从 Pixabay（无需 API key，反爬绕过），MiniMax AI 生成作为兜底
+- **节拍感知剪辑** — madmom 三路节拍检测（downbeat/pitch/mel_energy）+ LLM 歌曲结构分析（Intro/Verse/Chorus）
+- **音频混音** — BGM + 人声自动 ducking、淡入淡出、循环/裁剪、-14 LUFS 响度归一化
+- **自检渲染输出**，在每个切点边界检查后才给你看
+- **持久化会话记忆** 在 `project.md`，下周的会话从上次断点继续
 
-## Setup prompt
+## 设置提示词
 
-Paste into Claude Code, Codex, Hermes, Openclaw, or any agent with shell access:
+粘贴到 Claude Code、Codex、Hermes、Openclaw 或任何有 shell 访问的代理：
 
 ```text
 Set up https://github.com/browser-use/video-use for me.
@@ -32,151 +32,151 @@ Set up https://github.com/browser-use/video-use for me.
 Read install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.
 ```
 
-The agent handles the clone, dependencies, skill registration, and prompts you once for your ElevenLabs API key (grab one at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys)).
+代理会处理克隆、依赖安装、技能注册，并提示你一次 ElevenLabs API key（在 [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) 获取）。
 
-Then point your agent at a folder of raw takes:
+然后把代理指向原始素材文件夹：
 
 ```bash
 cd /path/to/your/videos
-claude    # or codex, hermes, etc.
+claude    # 或 codex, hermes 等
 ```
 
-For always-on editing from your own VPS or Telegram, run the agent through [Browser Use Box](https://browser-use.com/bux). [Watch the 15-second demo](https://www.tiktok.com/@browser_use/video/7639824093721758989).
+如果需要从 VPS 或 Telegram 常驻剪辑，通过 [Browser Use Box](https://browser-use.com/bux) 运行代理。[15 秒演示](https://www.tiktok.com/@browser_use/video/7639824093721758989)。
 
-And in the session:
+在会话中：
 
-> edit these into a launch video
+> 把这些剪成一个发布视频
 
-It inventories the sources, proposes a strategy, waits for your OK, then produces `edit/final.mp4` next to your sources. All outputs live in `<videos_dir>/edit/` — the skill directory stays clean.
+它会盘点素材、提出策略、等你确认，然后在素材旁生成 `edit/final.mp4`。所有输出都在 `<videos_dir>/edit/` — 项目目录保持干净。
 
-## Manual install
+## 手动安装
 
-If you'd rather do it by hand:
+如果你想自己来：
 
 ```bash
-# 1. Clone and symlink into your agent's skills directory
+# 1. 克隆并符号链接到代理的技能目录
 git clone https://github.com/browser-use/video-use ~/Developer/video-use
 ln -sfn ~/Developer/video-use ~/.claude/skills/video-use        # Claude Code
 # ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex
 
-# 2. Install deps
+# 2. 安装依赖
 cd ~/Developer/video-use
-uv sync                         # or: pip install -e .
-brew install ffmpeg             # required
-brew install yt-dlp             # optional, for downloading online sources
+uv sync                         # 或: pip install -e .
+brew install ffmpeg             # 必须
+brew install yt-dlp             # 可选，用于下载在线素材
 
-# 3. Add your ElevenLabs API key
+# 3. 添加 ElevenLabs API key
 cp .env.example .env
 $EDITOR .env                    # ELEVENLABS_API_KEY=...
 ```
 
-## How it works
+## 工作原理
 
-The LLM never watches the video. It **reads** it — through two layers that together give it everything it needs to cut with word-boundary precision.
+LLM 从不"看"视频。它**读**视频 — 通过两层接口，合在一起给它词级精度的剪辑能力。
 
 <p align="center">
-  <img src="static/timeline-view.svg" alt="timeline_view composite — filmstrip + speaker track + waveform + word labels + silence-gap cut candidates" width="100%">
+  <img src="static/timeline-view.svg" alt="timeline_view 合成图 — 胶片条 + 说话人轨道 + 波形 + 词标签 + 静音间隙切点候选" width="100%">
 </p>
 
-**Layer 1 — Audio transcript (always loaded).** One ElevenLabs Scribe call per source gives word-level timestamps, speaker diarization, and audio events (`(laughter)`, `(applause)`, `(sigh)`). All takes pack into a single ~12KB `takes_packed.md` — the LLM's primary reading view.
+**第一层 — 音频转录（始终加载）。** 每个源文件一次 ElevenLabs Scribe 调用，获得词级时间戳、说话人分离和音频事件（`(笑声)`、`(掌声)`、`(叹气)`）。所有素材打包成一个 ~12KB 的 `takes_packed.md` — LLM 的主阅读视图。
 
 ```
-## C0103  (duration: 43.0s, 8 phrases)
-  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.
-  [006.08-006.74] S0 We fixed this.
+## C0103  (时长: 43.0s, 8 短语)
+  [002.52-005.36] S0 百分之九十的 web agent 行为完全是浪费。
+  [006.08-006.74] S0 我们修好了。
 ```
 
-**Layer 2 — Visual composite (on demand).** `timeline_view` produces a filmstrip + waveform + word labels PNG for any time range. Called only at decision points — ambiguous pauses, retake comparisons, cut-point sanity checks.
+**第二层 — 视觉合成图（按需）。** `timeline_view` 为任意时间范围生成胶片条 + 波形 + 词标签 PNG。只在决策点调用 — 模糊停顿、重拍对比、切点合理性检查。
 
-> Naive approach: 30,000 frames × 1,500 tokens = **45M tokens of noise**.
-> Video Use: **12KB text + a handful of PNGs**.
+> 朴素方案：30,000 帧 × 1,500 tokens = **45M tokens 的噪声**。
+> video-use：**12KB 文本 + 几张 PNG**。
 
-Same idea as browser-use giving an LLM a structured DOM instead of a screenshot — but for video.
+跟 browser-use 给 LLM 结构化 DOM 而非截图是同一个思路 — 只是换成了视频。
 
-## Pipeline
+## 流水线
 
-### Standard (talking heads, interviews)
-
-```
-Transcribe ──> Pack ──> LLM Reasons ──> EDL ──> Render ──> Self-Eval
-                                                              │
-                                                              └─ issue? fix + re-render (max 3)
-```
-
-### Silent aerial footage (DJI drone, travel vlogs)
+### 标准流程（口播、访谈）
 
 ```
-Highlight Detect ──> Find Music ──> Beat Detect ──> LLM Reasons ──> EDL ──> Render + Mix ──> Self-Eval
-      │                  │               │                                        │
-      │                  │               │                                        └─ issue? fix + re-render
-      │                  │               └─ madmom 3-way beat detection
-      │                  └─ Pixabay search / MiniMax generate
-      └─ PySceneDetect + OpenCV + VLM
+转录 ──> 打包 ──> LLM 推理 ──> EDL ──> 渲染 ──> 自检
+                                                    │
+                                                    └─ 有问题？修复 + 重渲染（最多 3 次）
 ```
 
-The self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.
+### 静音航拍素材（DJI 无人机、旅行 Vlog）
 
-## New: Highlight Detection & BGM Music
+```
+高光检测 ──> 找音乐 ──> 节拍检测 ──> LLM 推理 ──> EDL ──> 渲染+混音 ──> 自检
+    │            │           │                                    │
+    │            │           │                                    └─ 有问题？修复 + 重渲染
+    │            │           └─ madmom 三路节拍检测
+    │            └─ Pixabay 搜索 / MiniMax 生成
+    └─ PySceneDetect + OpenCV + VLM
+```
 
-For silent aerial footage (DJI drone, travel vlogs), video-use now includes:
+自检循环在_渲染输出_的每个切点边界运行 `timeline_view` — 捕捉视觉跳帧、音频爆音、隐藏字幕。只有通过检查后你才看到预览。
 
-### Highlight Detection (`helpers/highlight_detect.py`)
+## 新功能：高光检测 & BGM 音乐
+
+针对静音航拍素材（DJI 无人机、旅行 Vlog），video-use 现在包含：
+
+### 高光检测（`helpers/highlight_detect.py`）
 
 ```bash
-# Detect highlights in silent aerial footage
-python helpers/highlight_detect.py /path/to/videos --theme "travel vlog"
+# 检测静音航拍素材中的高光片段
+python helpers/highlight_detect.py /path/to/videos --theme "旅行Vlog"
 
-# Skip VLM, use only OpenCV quality scoring
+# 跳过 VLM，仅使用 OpenCV 质量评分
 python helpers/highlight_detect.py /path/to/videos --no-vlm
 ```
 
-**4-layer pipeline:**
-1. **PySceneDetect** — shot boundary detection (AdaptiveDetector)
-2. **OpenCV quality pre-screen** — blur (Laplacian), exposure, motion, black frame detection
-3. **VLM scene description** — mimo-v2.5 / doubao-seed / Qwen3.5 via OpenAI-compatible API
-4. **LLM scoring** — highlights ranked by aesthetic quality and theme relevance
+**4 层流水线：**
+1. **PySceneDetect** — 镜头边界检测（AdaptiveDetector）
+2. **OpenCV 质量预筛** — 模糊（Laplacian）、曝光、运动、黑帧检测
+3. **VLM 场景描述** — mimo-v2.5 / doubao-seed / Qwen3.5，通过 OpenAI 兼容 API
+4. **LLM 评分** — 按美学质量和主题相关性排序高光
 
-### BGM Music (`helpers/find_music.py`)
+### BGM 音乐（`helpers/find_music.py`）
 
 ```bash
-# Search Pixabay for free royalty-free music
+# 从 Pixabay 搜索免费免版税音乐
 python helpers/find_music.py --style "cinematic travel" --provider pixabay
 
-# Generate via MiniMax AI (fallback)
+# 通过 MiniMax AI 生成（兜底）
 python helpers/find_music.py --style "upbeat electronic" --provider minimax
 
-# Auto: try Pixabay first, fall back to MiniMax
+# 自动：先试 Pixabay，不行再 MiniMax
 python helpers/find_music.py --style "chill lo-fi" --provider auto
 ```
 
-**Providers:**
-- **Pixabay** — free royalty-free music, no API key needed (anti-crawl bypass)
-- **MiniMax** — AI-generated instrumental music via `mmx-cli`
+**提供商：**
+- **Pixabay** — 免费免版税音乐，无需 API key（反爬绕过）
+- **MiniMax** — AI 生成器乐曲，通过 `mmx-cli`
 
-### Beat Detection (`helpers/beat_detect.py`)
+### 节拍检测（`helpers/beat_detect.py`）
 
 ```bash
-# Analyze BGM beats and structure
+# 分析 BGM 节拍和结构
 python helpers/beat_detect.py /path/to/bgm.mp3
 ```
 
-**Output:** `beats.json` with BPM, keypoints, song sections (Intro/Verse/Chorus), energy profile, best start offset.
+**输出：** `beats.json`，包含 BPM、关键点、歌曲段落（Intro/Verse/Chorus）、能量曲线、最佳起始偏移。
 
-### Audio Mixing (`helpers/mix_audio.py`)
+### 音频混音（`helpers/mix_audio.py`）
 
 ```bash
-# Mix video with BGM
+# 混合视频与 BGM
 python helpers/mix_audio.py video.mp4 bgm.mp3 -o output.mp4
 
-# With voiceover ducking
+# 带人声 ducking
 python helpers/mix_audio.py video.mp4 bgm.mp3 --duck-voiceover -o output.mp4
 ```
 
-**Features:** amix, sidechaincompress ducking, fade in/out, loop/trim, -14 LUFS loudness normalization.
+**功能：** amix、sidechaincompress ducking、淡入淡出、循环/裁剪、-14 LUFS 响度归一化。
 
-## Export profiles
+## 导出规格
 
-`render.py` can render a single platform profile, and `render_profiles.py` can batch-render every profile declared in `edl.json`:
+`render.py` 可以按单个平台规格渲染，`render_profiles.py` 可以批量渲染 `edl.json` 中声明的所有规格：
 
 ```bash
 uv run python helpers/render.py <videos_dir>/edit/edl.json \
@@ -187,14 +187,14 @@ uv run python helpers/render_profiles.py <videos_dir>/edit/edl.json \
   --profiles bilibili_4k60_landscape,douyin_1080p60_portrait
 ```
 
-Built-in profiles include Bilibili 4K/1080p landscape, Douyin portrait, Xiaohongshu portrait/3:4, and 1080p120 horizontal/vertical variants. Batch exports write:
+内置规格包括 B站 4K/1080p 横屏、抖音竖屏、小红书竖屏/3:4、以及 1080p120 横屏/竖屏变体。批量导出写入：
 
 ```text
 <videos_dir>/edit/exports/<profile>.mp4
 <videos_dir>/edit/exports/<profile>.json
 ```
 
-The JSON report validates resolution, fps, EDL duration, audio presence, black frames, and long silence. EDLs can declare defaults:
+JSON 报告验证分辨率、帧率、EDL 时长、音频存在、黑帧和长静音。EDL 可以声明默认值：
 
 ```json
 {
@@ -206,14 +206,14 @@ The JSON report validates resolution, fps, EDL duration, audio presence, black f
 }
 ```
 
-`audio_policy` supports `bgm_only`, `duck`, `mix`, `source_only`, and `silent`. For scenic drone/travel montages, use `bgm_only` to guarantee source camera audio is discarded and BGM is looped to the full output duration.
+`audio_policy` 支持 `bgm_only`、`duck`、`mix`、`source_only` 和 `silent`。对于航拍/旅行混剪，使用 `bgm_only` 确保源相机音频被丢弃，BGM 循环覆盖完整输出时长。
 
-## Design principles
+## 设计原则
 
-1. **Text + on-demand visuals.** No frame-dumping. The transcript is the surface.
-2. **Audio is primary, visuals follow.** Cuts come from speech boundaries and silence gaps.
-3. **Ask → confirm → execute → self-eval → persist.** Never touch the cut without strategy approval.
-4. **Zero assumptions about content type.** Look, ask, then edit.
-5. **12 hard rules, artistic freedom elsewhere.** Production-correctness is non-negotiable. Taste isn't.
+1. **文本 + 按需视觉。** 不倒帧。转录文本是主界面。
+2. **音频优先，视觉跟随。** 切点来自语音边界和静音间隙。
+3. **提问 → 确认 → 执行 → 自检 → 持久化。** 没有策略确认不动刀。
+4. **对内容类型零假设。** 先看、先问、再剪。
+5. **12 条硬规则，其余自由发挥。** 生产正确性不可妥协，审美不设限。
 
-See [`SKILL.md`](./SKILL.md) for the full production rules and editing craft.
+详见 [`SKILL.md`](./SKILL.md) 获取完整的生产规则和剪辑手艺。

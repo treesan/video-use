@@ -148,10 +148,10 @@ For silent aerial footage (DJI drone, travel vlogs), video-use now includes:
 
 ```bash
 # Detect highlights in silent aerial footage
-python helpers/highlight_detect.py /path/to/videos --theme "travel vlog"
+uv run python3 helpers/highlight_detect.py /path/to/videos --theme "travel vlog"
 
 # Skip VLM, use only OpenCV quality scoring
-python helpers/highlight_detect.py /path/to/videos --no-vlm
+uv run python3 helpers/highlight_detect.py /path/to/videos --no-vlm
 ```
 
 **4-layer pipeline:**
@@ -164,13 +164,13 @@ python helpers/highlight_detect.py /path/to/videos --no-vlm
 
 ```bash
 # Search Pixabay for free royalty-free music
-python helpers/find_music.py --style "cinematic travel" --provider pixabay
+uv run python3 helpers/find_music.py --style "cinematic travel" --provider pixabay
 
 # Generate via MiniMax AI (fallback)
-python helpers/find_music.py --style "upbeat electronic" --provider minimax
+uv run python3 helpers/find_music.py --style "upbeat electronic" --provider minimax
 
 # Auto: try Pixabay first, fall back to MiniMax
-python helpers/find_music.py --style "chill lo-fi" --provider auto
+uv run python3 helpers/find_music.py --style "chill lo-fi" --provider auto
 ```
 
 **Providers:**
@@ -181,7 +181,7 @@ python helpers/find_music.py --style "chill lo-fi" --provider auto
 
 ```bash
 # Analyze BGM beats and structure
-python helpers/beat_detect.py /path/to/bgm.mp3
+uv run python3 helpers/beat_detect.py /path/to/bgm.mp3
 ```
 
 **Output:** `beats.json` with BPM, keypoints, song sections (Intro/Verse/Chorus), energy profile, best start offset.
@@ -190,10 +190,10 @@ python helpers/beat_detect.py /path/to/bgm.mp3
 
 ```bash
 # Mix video with BGM
-python helpers/mix_audio.py video.mp4 bgm.mp3 -o output.mp4
+uv run python3 helpers/mix_audio.py video.mp4 bgm.mp3 -o output.mp4
 
 # With voiceover ducking
-python helpers/mix_audio.py video.mp4 bgm.mp3 --duck-voiceover -o output.mp4
+uv run python3 helpers/mix_audio.py video.mp4 bgm.mp3 --duck-voiceover -o output.mp4
 ```
 
 **Features:** amix, sidechaincompress ducking, fade in/out, loop/trim, -14 LUFS loudness normalization.
@@ -203,11 +203,11 @@ python helpers/mix_audio.py video.mp4 bgm.mp3 --duck-voiceover -o output.mp4
 `render.py` can render a single platform profile, and `render_profiles.py` can batch-render every profile declared in `edl.json`:
 
 ```bash
-uv run python helpers/render.py <videos_dir>/edit/edl.json \
+uv run python3 helpers/render.py <videos_dir>/edit/edl.json \
   -o <videos_dir>/edit/final.mp4 \
   --profile bilibili_1080p60_landscape
 
-uv run python helpers/render_profiles.py <videos_dir>/edit/edl.json \
+uv run python3 helpers/render_profiles.py <videos_dir>/edit/edl.json \
   --profiles bilibili_4k60_landscape,douyin_1080p60_portrait
 ```
 

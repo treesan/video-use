@@ -1,151 +1,155 @@
 ---
 name: video-use
-description: Edit any video by conversation. Transcribe, cut, color grade, generate overlay animations, burn subtitles — for talking heads, montages, tutorials, travel, interviews. No presets, no menus. Ask questions, confirm the plan, execute, iterate, persist. Production-correctness rules are hard; everything else is artistic freedom.
+description: 用对话方式剪辑任何视频。转录、剪切、调色、生成动画叠层、烧录字幕 — 适用于口播、混剪、教程、旅行、访谈。无预设、无菜单。先问、确认、再执行、迭代、持久化。生产正确性规则不可妥协，其余都是创作自由。
 ---
 
 # Video Use
 
-## Principle
+## 原则
 
-1. **LLM reasons from raw transcript + on-demand visuals.** The only derived artifact that earns its keep is a packed phrase-level transcript (`takes_packed.md`). Everything else — filler tagging, retake detection, shot classification, emphasis scoring — you derive at decision time.
-2. **Audio is primary, visuals follow.** Cut candidates come from speech boundaries and silence gaps. Drill into visuals only at decision points.
-3. **Ask → confirm → execute → iterate → persist.** Never touch the cut until the user has confirmed the strategy in plain English.
-4. **Generalize.** Do not assume what kind of video this is. Look at the material, ask the user, then edit.
-5. **Artistic freedom is the default.** Every specific value, preset, font, color, duration, pitch structure, and technique in this document is a *worked example* from one proven video — not a mandate. Read them to understand what's possible and why each worked. Then make your own taste calls based on what the material actually is and what the user actually wants. **The only things you MUST do are in the Hard Rules section below.** Everything else is yours.
-6. **Invent freely.** If the material calls for a technique not described here — split-screen, picture-in-picture, lower-third identity cards, reaction cuts, speed ramps, freeze frames, crossfades, match cuts, L-cuts, J-cuts, speed ramps over breath, whatever — build it. The helpers are ffmpeg and PIL. They can do anything the format supports. Do not wait for permission.
-7. **Verify your own output before showing it to the user.** If you wouldn't ship it, don't present it.
+1. **LLM 从原始转录 + 按需视觉中推理。** 唯一值得保留的衍生产物是打包好的短语级转录文本（`takes_packed.md`）。其余一切 — 废话标记、重拍检测、镜头分类、重点评分 — 都在决策时即时推导。
+2. **音频为主，视觉跟随。** 切点候选来自语音边界和静音间隙。视觉只在决策点深入查看。
+3. **提问 → 确认 → 执行 → 迭代 → 持久化。** 用户用自然语言确认策略之前，绝不动刀。
+4. **通用化。** 不要预设这是什么类型的视频。先看素材，问用户，再剪辑。
+5. **创作自由是默认值。** 本文档中的每个具体数值、预设、字体、颜色、时长、音高结构和技法，都来自某个已验证的视频案例 — 不是强制规范。阅读它们是为了理解可行性和原因。然后根据素材的实际情况和用户的实际需求，自己做品味判断。**你必须做的事只列在下方的硬规则部分。** 其余一切由你决定。
+6. **自由创造。** 如果素材需要本文档未描述的技法 — 分屏、画中画、下三分之一身份卡、反应镜头、变速、定格、交叉溶解、匹配剪辑、L 型剪辑、J 型剪辑、呼吸变速、随便什么 — 做就是了。工具是 ffmpeg 和 PIL。格式支持什么就能做什么。不用等批准。
+7. **在给用户看之前，先验证自己的输出。** 如果自己不想交付，就不要呈现。
 
-## Hard Rules (production correctness — non-negotiable)
+## 硬规则（生产正确性 — 不可妥协）
 
-These are the things where deviation produces silent failures or broken output. They are not taste, they are correctness. Memorize them.
+这些规则一旦违反就会产生静默失败或损坏的输出。它们不是品味问题，是正确性问题。记牢。
 
-1. **Subtitles are applied LAST in the filter chain**, after every overlay. Otherwise overlays hide captions. Silent failure.
-2. **Per-segment extract → lossless `-c copy` concat**, not single-pass filtergraph. Otherwise you double-encode every segment when overlays are added.
-3. **30ms audio fades at every segment boundary** (`afade=t=in:st=0:d=0.03,afade=t=out:st={dur-0.03}:d=0.03`). Otherwise audible pops at every cut.
-4. **Overlays use `setpts=PTS-STARTPTS+T/TB`** to shift the overlay's frame 0 to its window start. Otherwise you see the middle of the animation during the overlay window.
-5. **Master SRT uses output-timeline offsets**: `output_time = word.start - segment_start + segment_offset`. Otherwise captions misalign after segment concat.
-6. **Never cut inside a word.** Snap every cut edge to a word boundary from the Scribe transcript.
-7. **Pad every cut edge.** Working window: 30–200ms. Scribe timestamps drift 50–100ms — padding absorbs the drift. Tighter for fast-paced, looser for cinematic.
-8. **Word-level verbatim ASR only.** Never SRT/phrase mode (loses sub-second gap data). Never normalized fillers (loses editorial signal).
-9. **Cache transcripts per source.** Never re-transcribe unless the source file itself changed.
-10. **Parallel sub-agents for multiple animations.** Never sequential. Spawn N at once via the `Agent` tool; total wall time ≈ slowest one.
-11. **Strategy confirmation before execution.** Never touch the cut until the user has approved the plain-English plan.
-12. **All session outputs in `<videos_dir>/edit/`.** Never write inside the `video-use/` project directory.
+1. **字幕在滤镜链的最后应用**，在所有叠层之后。否则叠层会遮住字幕。静默失败。
+2. **逐段提取 → 无损 `-c copy` 拼接**，而非单次滤镜图。否则添加叠层时会导致二次编码。
+3. **每个段落边界 30ms 音频淡入淡出**（`afade=t=in:st=0:d=0.03,afade=t=out:st={dur-0.03}:d=0.03`）。否则每个切点都有可闻爆音。
+4. **叠层使用 `setpts=PTS-STARTPTS+T/TB`**，将叠层的第 0 帧位移到其窗口起始时间。否则会在叠层窗口期间看到动画的中间帧。
+5. **母版 SRT 使用输出时间线偏移量**：`output_time = word.start - segment_start + segment_offset`。否则拼接后字幕对齐错误。
+6. **绝不在词中间下刀。** 每个切边必须对齐 Scribe 转录中的词边界。
+7. **每个切边留余量。** 工作窗口：30–200ms。Scribe 时间戳漂移 50–100ms — 余量吸收漂移。快节奏偏紧，电影感偏松。
+8. **仅使用词级逐字 ASR。** 绝不用 SRT/短语模式（丢失亚秒级间隙数据）。绝不用标准化填充词（丢失编辑信号）。
+9. **按源文件缓存转录。** 除非源文件本身发生变化，否则绝不重新转录。
+10. **多个动画使用并行子代理。** 绝不串行。通过 `Agent` 工具同时启动 N 个；总耗时 ≈ 最慢的那个。
+11. **执行前确认策略。** 用户批准自然语言方案之前，绝不动刀。
+12. **所有会话输出在 `<videos_dir>/edit/` 中。** 绝不写入 `video-use/` 项目目录。
 
-Everything else in this document is a worked example. Deviate whenever the material calls for it.
+本文档中其他所有内容都是已验证的案例。素材需要时随时偏离。
 
-## Directory layout
+## 目录布局
 
-The skill lives in `video-use/`. User footage lives wherever they put it. All session outputs go into `<videos_dir>/edit/`.
+Skill 位于 `video-use/`。用户素材在他们放的任何位置。所有会话输出进入 `<videos_dir>/edit/`。
 
 ```
 <videos_dir>/
-├── <source files, untouched>
+├── <源文件，不动>
 └── edit/
-    ├── project.md               ← memory; appended every session
-    ├── takes_packed.md          ← phrase-level transcripts, the LLM's primary reading view
-    ├── edl.json                 ← cut decisions
-    ├── highlights.json          ← highlight detection results (silent aerial footage)
-    ├── beats.json               ← BGM beat/structure analysis
-    ├── bgm.mp3                  ← downloaded or generated background music
-    ├── bgm_meta.json            ← BGM source metadata
-    ├── transcripts/<name>.json  ← cached raw Scribe JSON
-    ├── animations/slot_<id>/    ← per-animation source + render + reasoning
-    ├── clips_graded/            ← per-segment extracts with grade + fades
-    ├── master.srt               ← output-timeline subtitles
-    ├── downloads/               ← yt-dlp outputs
-    ├── verify/                  ← debug frames / timeline PNGs
+    ├── project.md               ← 记忆；每次会话追加
+    ├── takes_packed.md          ← 短语级转录，LLM 的主阅读视图
+    ├── edl.json                 ← 剪切决策
+    ├── highlights.json          ← 高光检测结果（静音航拍素材）
+    ├── beats.json               ← BGM 节拍/结构分析
+    ├── bgm.mp3                  ← 下载或生成的背景音乐
+    ├── bgm_meta.json            ← BGM 来源元数据
+    ├── transcripts/<name>.json  ← 缓存的原始 Scribe JSON
+    ├── animations/slot_<id>/    ← 每个动画的源文件 + 渲染 + 推理
+    ├── clips_graded/            ← 逐段提取带调色 + 淡入淡出
+    ├── master.srt               ← 输出时间线字幕
+    ├── downloads/               ← yt-dlp 输出
+    ├── exports/                 ← 批量导出输出
+    │   ├── <profile>.mp4        ← 每个规格的渲染输出
+    │   └── <profile>.json       ← 每个规格的验证报告
+    ├── verify/                  ← 调试帧 / 时间线 PNG
     ├── preview.mp4
     └── final.mp4
 ```
 
-## Setup
+## 环境设置
 
-First-time install lives in `install.md` (clone, deps, ffmpeg, skill registration, API key). Don't re-run it every session; on cold start just verify:
+首次安装见 `install.md`（克隆、依赖、ffmpeg、skill 注册、API key）。不要每次会话重跑；冷启动时只需验证：
 
-- `ELEVENLABS_API_KEY` or `VOLC_ASR_APP_KEY` resolves — at least one ASR key must be present. `transcribe.py` auto-selects the backend: ElevenLabs Scribe for English, Volcengine BigASR for Chinese (controlled by `--asr` flag or auto-detect). Keys go in `.env` at the video-use repo root. If both are missing, ask the user to paste one.
-- `ffmpeg` + `ffprobe` on PATH.
-- Python deps installed (`uv sync` or `pip install -e .` inside the repo).
-- Node.js + npm available if the session needs HyperFrames or Remotion slots. HyperFrames currently requires Node.js 22+.
-- `yt-dlp`, HyperFrames, Remotion, Manim installed only on first use.
-- First-use animation setup happens inside the slot directory, never at the video-use repo root. HyperFrames can be invoked with `npx --yes hyperframes ...`; Remotion can be scaffolded with `npx create-video@latest` or installed as a project-local dependency before using its `remotion render` command.
-- This skill vendors `skills/manim-video/`. Read its SKILL.md when building a Manim slot.
+- `ELEVENLABS_API_KEY` 或 `VOLC_ASR_APP_KEY` 已解析 — 至少一个 ASR key 必须存在。`transcribe.py` 自动选择后端：英文用 ElevenLabs Scribe，中文用火山引擎 BigASR（通过 `--asr` 参数控制或自动检测）。Key 放在 video-use 仓库根目录的 `.env` 中。如果两个都缺失，请用户粘贴一个。
+- `ffmpeg` + `ffprobe` 在 PATH 上。
+- Python 依赖已安装（在仓库内 `uv sync` 或 `pip install -e .`）。
+- 如果会话需要 HyperFrames 或 Remotion 插槽，Node.js + npm 可用。HyperFrames 目前需要 Node.js 22+。
+- `yt-dlp`、HyperFrames、Remotion、Manim 仅在首次使用时安装。
+- 首次使用的动画设置在插槽目录内进行，绝不在 video-use 仓库根目录。HyperFrames 可用 `npx --yes hyperframes ...` 调用；Remotion 可用 `npx create-video@latest` 脚手架搭建，或安装为项目本地依赖后使用其 `remotion render` 命令。
+- 此 skill 自带 `skills/manim-video/`。构建 Manim 插槽时阅读其 SKILL.md。
 
-Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this SKILL.md. Resolve their paths relative to the directory containing this file — the skill is typically symlinked at `~/.claude/skills/video-use/` or `~/.codex/skills/video-use/`.
+Helpers（`helpers/transcribe.py`、`helpers/render.py` 等）与此 SKILL.md 位于同一目录。相对于包含此文件的目录解析路径 — skill 通常符号链接在 `~/.claude/skills/video-use/` 或 `~/.codex/skills/video-use/`。
 
 ## Helpers
 
-- **`transcribe.py <video>`** — single-file Scribe call. `--num-speakers N` optional. Cached.
-- **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
-- **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s).
-- **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
-- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline.
-- **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
-- **`highlight_detect.py <videos_dir>`** — silent aerial footage highlight detection. PySceneDetect shot boundaries → OpenCV quality pre-screen → VLM scene description → LLM scoring. Outputs `highlights.json`.
-- **`beat_detect.py <bgm_file>`** — BGM beat/structure analysis. madmom three-way detection + LLM song structure + ebur128 energy profile. Outputs `beats.json`.
-- **`find_music.py --style "..."`** — BGM search/generation. Pixabay free music (API or scraping) → MiniMax AI generation fallback. Outputs `bgm.mp3` + `bgm_meta.json`.
-- **`mix_audio.py <video> <bgm>`** — audio mixing. Original + BGM mix, voiceover ducking, fade-in/out, BGM loop/trim, loudnorm -14 LUFS.
+- **`transcribe.py <video>`** — 单文件 Scribe 调用。可选 `--num-speakers N`。已缓存。
+- **`transcribe_batch.py <videos_dir>`** — 4 工作线程并行转录。多 take 使用。
+- **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md`（短语级，静音 ≥ 0.5s 断句）。
+- **`timeline_view.py <video> <start> <end>`** — 胶片条 + 波形 PNG。按需视觉深入查看。**不是扫描工具** — 在决策点使用，不要频繁调用。
+- **`render.py <edl.json> -o <out>`** — 逐段提取 → 拼接 → 叠层（PTS 位移）→ 字幕最后。`--preview` 快速 720p。`--build-subtitles` 内联生成 master.srt。
+- **`grade.py <in> -o <out>`** — ffmpeg 滤镜链调色。预设 + `--filter '<raw>'` 自定义。
+- **`highlight_detect.py <videos_dir>`** — 静音航拍素材高光检测。PySceneDetect 镜头边界 → OpenCV 质量预筛 → VLM 场景描述 → LLM 评分。输出 `highlights.json`。
+- **`beat_detect.py <bgm_file>`** — BGM 节拍/结构分析。madmom 三路检测 + LLM 歌曲结构 + ebur128 能量曲线。输出 `beats.json`。
+- **`find_music.py --style "..."`** — BGM 搜索/生成。Pixabay 免费音乐（API 或抓取）→ MiniMax AI 生成兜底。输出 `bgm.mp3` + `bgm_meta.json`。
+- **`mix_audio.py <video> <bgm>`** — 音频混音。原声 + BGM 混合、人声 ducking、淡入淡出、BGM 循环/裁剪、loudnorm -14 LUFS。
+- **`render_profiles.py <edl.json>`** — 批量导出 edl.json 声明的所有平台规格。`--profiles` 指定规格列表。
 
-For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
+对于动画，用 `Bash` 创建 `<edit>/animations/slot_<id>/` 并通过 `Agent` 工具生成子代理。
 
-## The process
+## 流程
 
-1. **Inventory.** `ffprobe` every source. `transcribe_batch.py` on the directory. `pack_transcripts.py` to produce `takes_packed.md`. Sample one or two `timeline_view`s for a visual first impression.
-2. **Pre-scan for problems.** One pass over `takes_packed.md` to note verbal slips, obvious mis-speaks, or phrasings to avoid. Plain list, feed into the editor brief.
-3. **Converse.** Describe what you see in plain English. Ask questions *shaped by the material*. Collect: content type, target length/aspect, aesthetic/brand direction, pacing feel, must-preserve moments, must-cut moments, animation and grade preferences, subtitle needs. Do not use a fixed checklist — the right questions are different every time.
-4. **Propose strategy.** 4–8 sentences: shape, take choices, cut direction, animation plan, grade direction, subtitle style, length estimate. **Wait for confirmation.**
-5. **Execute.** Produce `edl.json` via the editor sub-agent brief. Drill into `timeline_view` at ambiguous moments. Build animations in parallel sub-agents. Apply grade per-segment. Compose via `render.py`.
-6. **Preview.** `render.py --preview`.
-7. **Self-eval (before showing the user).** Run `timeline_view` on the **rendered output** (not the sources) at every cut boundary (±1.5s window). Check each image for:
-   - Visual discontinuity / flash / jump at the cut
-   - Waveform spike at the boundary (audio pop that slipped past the 30ms fade)
-   - Subtitle hidden behind an overlay (Rule 1 violation)
-   - Overlay misaligned or showing wrong frames (Rule 4 violation)
+1. **盘点。** `ffprobe` 每个源文件。对目录运行 `transcribe_batch.py`。运行 `pack_transcripts.py` 生成 `takes_packed.md`。抽样一两个 `timeline_view` 获取视觉第一印象。
+2. **预扫描问题。** 浏览一遍 `takes_packed.md`，标注口误、明显错读或需避免的措辞。列出清单，输入编辑简报。
+3. **对话。** 用自然语言描述你看到的。问由素材塑造的问题。收集：内容类型、目标时长/宽高比、美学/品牌方向、节奏感、必须保留的时刻、必须剪掉的时刻、动画和调色偏好、字幕需求。不要用固定清单 — 每次合适的问题都不一样。
+4. **提出策略。** 4–8 句话：形态、take 选择、剪切方向、动画方案、调色方向、字幕风格、时长估算。**等待确认。**
+5. **执行。** 通过编辑子代理简报生成 `edl.json`。在模糊时刻深入 `timeline_view`。并行子代理构建动画。逐段调色。通过 `render.py` 合成。
+6. **预览。** `render.py --preview`。
+7. **自检（在给用户看之前）。** 对**渲染输出**（不是源文件）的每个切点边界（±1.5s 窗口）运行 `timeline_view`。逐张检查：
+   - 切点处的视觉不连续 / 闪烁 / 跳跃
+   - 边界处的波形尖峰（逃过 30ms 淡入淡出的音频爆音）
+   - 字幕被叠层遮挡（违反规则 1）
+   - 叠层错位或显示错误帧（违反规则 4）
 
-   Also sample: first 2s, last 2s, and 2–3 mid-points — check grade consistency, subtitle readability, overall coherence. Run `ffprobe` on the output to verify duration matches the EDL expectation.
+   同时抽样：前 2s、后 2s、以及 2–3 个中间点 — 检查调色一致性、字幕可读性、整体连贯性。对输出运行 `ffprobe` 验证时长与 EDL 预期一致。
 
-   If anything fails: fix → re-render → re-eval. **Cap at 3 self-eval passes** — if issues remain after 3, flag them to the user rather than looping forever. Only present the preview once the self-eval passes.
-8. **Iterate + persist.** Natural-language feedback, re-plan, re-render. Never re-transcribe. Final render on confirmation. Append to `project.md`.
+   如果有问题：修复 → 重渲染 → 重检。**自检上限 3 轮** — 如果 3 轮后仍有问题，标记给用户而不是无限循环。只有自检通过后才呈现预览。
+8. **迭代 + 持久化。** 自然语言反馈、重新规划、重新渲染。绝不重新转录。确认后最终渲染。追加到 `project.md`。
 
-## Highlight detection (silent aerial footage)
+## 高光检测（静音航拍素材）
 
-For DJI drone footage and other silent video with no speech, the audio-first pipeline has nothing to work with. `highlight_detect.py` provides a visual-first alternative:
+对于 DJI 无人机素材和其他无语对白的静音视频，音频优先的流水线无内容可处理。`highlight_detect.py` 提供了视觉优先的替代方案：
 
-1. **Run highlight detection.** `python helpers/highlight_detect.py <videos_dir> --theme "旅行Vlog-青海湖"`. The three-layer pipeline runs:
-   - PySceneDetect finds shot boundaries (AdaptiveDetector)
-   - OpenCV pre-screens quality (Laplacian blur + exposure + motion — filters out 30-50% of junk shots)
-   - VLM describes quality-passing shots (native video understanding — video clips sent as base64)
-   - LLM scores and ranks highlights, outputting `highlights.json`
+1. **运行高光检测。** `uv run python3 helpers/highlight_detect.py <videos_dir> --theme "旅行Vlog-青海湖"`。三层流水线运行：
+   - PySceneDetect 找镜头边界（AdaptiveDetector）
+   - OpenCV 预筛质量（Laplacian 模糊度 + 曝光 + 运动幅度 — 过滤 30-50% 的垃圾镜头）
+   - VLM 描述质量通过的镜头（原生视频理解 — 视频片段以 base64 发送）
+   - LLM 评分排序高光，输出 `highlights.json`
 
-2. **Review highlights.** Read `highlights.json` — it's sorted by score, each entry has `source`/`start`/`end` compatible with edl.json ranges, plus `tags`, `reason`, and `vlm_summary`.
+2. **查看高光。** 读取 `highlights.json` — 按分数排序，每条有 `source`/`start`/`end`（兼容 edl.json ranges 格式），外加 `tags`、`reason` 和 `vlm_summary`。
 
-3. **Select and refine.** Pick the highlights that fit the narrative. The `highlights[].source/start/end` can be copied directly into `edl.json` ranges. Adjust boundaries with `timeline_view` at decision points.
+3. **筛选与精修。** 挑选符合叙事的高光。`highlights[].source/start/end` 可直接复制到 `edl.json` ranges。在决策点用 `timeline_view` 调整边界。
 
-4. **Without VLM.** If no VLM API key is available, use `--no-vlm` — scoring falls back to OpenCV quality only. Less semantic, but still filters junk and ranks by technical quality.
+4. **不用 VLM。** 如果没有 VLM API key，使用 `--no-vlm` — 评分回退到仅 OpenCV 质量评分。语义信息少，但仍能过滤垃圾并按技术质量排序。
 
-**VLM/LLM provider config:** Set `VLM_PROVIDER` in `.env` to `xiaomi` (MiMo v2.5, default) or `minimax` (MiniMax-M3). The corresponding API key (`MIMO_API_KEY` or `MINIMAX_API_KEY`) is required. Provider routing is handled by `helpers/vlm_client.py` — each provider has its own base_url, model, fps range, and video content format.
+**VLM/LLM 提供商配置：** 在 `.env` 中设置 `VLM_PROVIDER` 为 `xiaomi`（MiMo v2.5，默认）或 `minimax`（MiniMax-M3）。对应的 API key（`MIMO_API_KEY` 或 `MINIMAX_API_KEY`）必须配置。提供商路由由 `helpers/vlm_client.py` 处理 — 每个提供商有其自己的 base_url、model、fps 范围和视频内容格式。
 
-**Pixabay BGM search:** `PIXABAY_API_KEY` is optional — without it, `find_music.py` uses the scraping fallback. MiniMax AI generation requires `mmx-cli` installed and `MINIMAX_API_KEY` set.
+**Pixabay BGM 搜索：** `PIXABAY_API_KEY` 可选 — 没有的话，`find_music.py` 使用抓取兜底方案。MiniMax AI 生成需要安装 `mmx-cli` 并设置 `MINIMAX_API_KEY`。
 
-## BGM scoring (search → beat analysis → mix)
+## BGM 配乐（搜索 → 节拍分析 → 混音）
 
-When the video needs background music, use this flow:
+当视频需要背景音乐时，使用此流程：
 
-1. **Get BGM.** Either the user provides a file, or run `find_music.py`:
+1. **获取 BGM。** 用户提供文件，或运行 `find_music.py`：
    ```
-   python helpers/find_music.py --style "upbeat cinematic travel" --min-duration 60 --max-duration 180
+   uv run python3 helpers/find_music.py --style "upbeat cinematic travel" --min-duration 60 --max-duration 180
    ```
-   Tries Pixabay first (free, royalty-free). Falls back to MiniMax AI generation (`mmx music generate --instrumental`). Outputs `bgm.mp3` + `bgm_meta.json`.
+   先尝试 Pixabay（免费、免版税）。兜底 MiniMax AI 生成（`mmx music generate --instrumental`）。输出 `bgm.mp3` + `bgm_meta.json`。
 
-2. **Analyze beats.** `python helpers/beat_detect.py <edit>/bgm.mp3 --target-duration 120`
-   - madmom detects downbeats, pitch onsets, and energy peaks
-   - LLM identifies song sections (Intro/Verse/Chorus/Outro)
-   - ebur128 finds the best start point (skips silent intro)
-   - Outputs `beats.json` with `bpm`, `sections[]`, `keypoints[]`, `best_start`
+2. **分析节拍。** `uv run python3 helpers/beat_detect.py <edit>/bgm.mp3 --target-duration 120`
+   - madmom 检测重拍、音高起始点和能量峰值
+   - LLM 识别歌曲段落（Intro/Verse/Chorus/Outro）
+   - ebur128 找到最佳起始点（跳过静音前奏）
+   - 输出 `beats.json`，包含 `bpm`、`sections[]`、`keypoints[]`、`best_start`
 
-3. **Plan cuts to beats.** Use `beats.json` keypoints and sections to align cuts with musical structure. Place strong visual moments on downbeats, transitions on section boundaries. The LLM editor brief should reference the beat structure.
+3. **规划节拍对齐剪切。** 使用 `beats.json` 的关键点和段落，将剪切与音乐结构对齐。强视觉时刻放在重拍上，转场放在段落边界。LLM 编辑简报应引用节拍结构。
 
-4. **Mix audio.** The `edl.json` `bgm` field triggers automatic BGM mixing in `render.py`:
+4. **混音。** `edl.json` 的 `bgm` 字段触发 `render.py` 中的自动 BGM 混音：
    ```json
    "bgm": {
      "file": "edit/bgm.mp3",
@@ -156,97 +160,97 @@ When the video needs background music, use this flow:
      "fade_out": 3.0
    }
    ```
-   - `duck_voiceover: true` — BGM auto-ducks when original audio (speech) is present via `sidechaincompress`
-   - `start_offset` — skip BGM intro, use `beats.json` `best_start` value
-   - Volume, fade-in, fade-out are taste calls — propose values in the strategy and confirm
+   - `duck_voiceover: true` — 当原声（语音）存在时，BGM 通过 `sidechaincompress` 自动降低音量
+   - `start_offset` — 跳过 BGM 前奏，使用 `beats.json` 的 `best_start` 值
+   - 音量、淡入、淡出是品味判断 — 在策略中提出数值并确认
 
-   For silent aerial footage: `duck_voiceover` has no effect (no original audio to duck against), BGM becomes the sole audio track.
+   对于静音航拍素材：`duck_voiceover` 无效（没有原声可以 duck），BGM 成为唯一音轨。
 
-   The mix happens after compositing (subtitles LAST) and before loudness normalization, maintaining the Hard Rules pipeline order.
+   混音发生在合成之后（字幕最后）和响度归一化之前，保持硬规则的流水线顺序。
 
-## Cut craft (techniques)
+## 剪辑手艺（技法）
 
-- **Audio-first.** Candidate cuts from word boundaries and silence gaps.
-- **Preserve peaks.** Laughs, punchlines, emphasis beats. Extend past punchlines to include reactions — the laugh IS the beat.
-- **Speaker handoffs** benefit from air between utterances. Common values: 400–600ms. Less for fast-paced, more for cinematic. Taste call.
-- **Audio events as signals.** `(laughs)`, `(sighs)`, `(applause)` mark beats. Extend past them.
-- **Silence gaps are cut candidates.** Silences ≥400ms are usually the cleanest. 150–400ms phrase boundaries are usable with a visual check. <150ms is unsafe (mid-phrase).
-- **Example cut padding** (the launch video shipped with this): 50ms before the first kept word, 80ms after the last. Tighter for montage energy, looser for documentary. Stay in the 30–200ms working window (Hard Rule 7).
-- **Never reason audio and video independently.** Every cut must work on both tracks.
+- **音频优先。** 候选切点来自词边界和静音间隙。
+- **保留高潮。** 笑声、金句、强调节拍。在高潮之后延长以包含反应 — 笑声本身就是节拍。
+- **说话人交接** 在话语之间留气口。常用值：400–600ms。快节奏更短，电影感更长。品味判断。
+- **音频事件作为信号。** `(笑声)`、`(叹气)`、`(掌声)` 标记节拍。在其后延长。
+- **静音间隙是切点候选。** ≥400ms 的静音通常最干净。150–400ms 的短语边界可用但需视觉检查。<150ms 不安全（短语中间）。
+- **示例切点余量**（某发布视频的实际值）：第一个保留词前 50ms，最后一个保留词后 80ms。混剪活力更紧，纪录片更松。保持在 30–200ms 工作窗口内（硬规则 7）。
+- **绝不要独立推理音频和视频。** 每个剪切必须在两条轨道上都成立。
 
-## The packed transcript (primary reading view)
+## 打包转录文本（主阅读视图）
 
-`pack_transcripts.py` reads all `transcripts/*.json` and produces one markdown file where each take is a list of phrase-level lines, each prefixed with its `[start-end]` time range. Phrases break on any silence ≥ 0.5s OR speaker change. This is the artifact the editor sub-agent reads to pick cuts — it gives word-boundary precision from text alone at 1/10 the tokens of raw JSON.
+`pack_transcripts.py` 读取所有 `transcripts/*.json` 并生成一个 markdown 文件，每个 take 是一组短语级行，每行前缀为 `[start-end]` 时间范围。短语在静音 ≥ 0.5s 或说话人变化时断开。这是编辑子代理用来挑选剪切点的产物 — 仅凭文本就能给出词边界精度，token 消耗仅为原始 JSON 的 1/10。
 
-Example line:
+示例行：
 ```
-## C0103  (duration: 43.0s, 8 phrases)
-  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.
-  [006.08-006.74] S0 We fixed this.
+## C0103  (时长: 43.0s, 8 短语)
+  [002.52-005.36] S0 百分之九十的 web agent 行为完全是浪费。
+  [006.08-006.74] S0 我们修好了。
 ```
 
-## Editor sub-agent brief (for multi-take selection)
+## 编辑子代理简报（多 take 筛选用）
 
-When the task is "pick the best take of each beat across many clips," spawn a dedicated sub-agent with a brief shaped like this. The structure is load-bearing; the pitch-shape example is not.
+当任务是"从众多片段中为每个节拍挑选最佳 take"时，生成一个独立的子代理，简报模板如下。结构是核心；音高示例不是。
 
 ```
-You are editing a <type> video. Pick the best take of each beat and 
-assemble them chronologically by beat, not by source clip order.
+你正在剪辑一部<类型>视频。为每个节拍挑选最佳 take，并按节拍时间顺序组装，
+不是按源片段顺序。
 
-INPUTS:
-  - takes_packed.md (time-annotated phrase-level transcripts of all takes)
-  - Product/narrative context: <2 sentences from the user>
-  - Speaker(s): <name, role, delivery style note>
-  - Expected structure: <pick an archetype or invent one>
-  - Verbal slips to avoid: <list from the pre-scan pass>
-  - Target runtime: <seconds>
+输入：
+  - takes_packed.md（所有 take 的带时间注释短语级转录）
+  - 产品/叙事上下文：<用户提供的 2 句话>
+  - 说话人：<姓名、角色、表达风格说明>
+  - 预期结构：<选一个原型或自创>
+  - 需避免的口误：<预扫描阶段列出的清单>
+  - 目标时长：<秒>
 
-Common structural archetypes (pick, adapt, or invent):
-  - Tech launch / demo:   HOOK → PROBLEM → SOLUTION → BENEFIT → EXAMPLE → CTA
-  - Tutorial:             INTRO → SETUP → STEPS → GOTCHAS → RECAP
-  - Interview:            (QUESTION → ANSWER → FOLLOWUP) repeat
-  - Travel / event:       ARRIVAL → HIGHLIGHTS → QUIET MOMENTS → DEPARTURE
-  - Documentary:          THESIS → EVIDENCE → COUNTERPOINT → CONCLUSION
-  - Music / performance:  INTRO → VERSE → CHORUS → BRIDGE → OUTRO
-  - Or invent your own.
+常见结构原型（选、改或自创）：
+  - 科技发布 / 演示：  钩子 → 问题 → 解决方案 → 收益 → 示例 → 行动号召
+  - 教程：             引入 → 准备 → 步骤 → 坑点 → 回顾
+  - 访谈：             （提问 → 回答 → 追问）循环
+  - 旅行 / 活动：      到达 → 高光 → 安静时刻 → 离开
+  - 纪录片：           论点 → 证据 → 反方 → 结论
+  - 音乐 / 表演：      前奏 → 主歌 → 副歌 → 桥段 → 尾奏
+  - 或自创。
 
-RULES:
-  - Start/end times must fall on word boundaries from the transcript.
-  - Pad cut boundaries (working window 30–200ms).
-  - Prefer silences ≥ 400ms as cut targets.
-  - Unavoidable slips are kept if no better take exists. Note them in "reason".
-  - If over budget, revise: drop a beat or trim tails. Report total and self-correct.
+规则：
+  - 起止时间必须落在转录中的词边界上。
+  - 切点边界留余量（工作窗口 30–200ms）。
+  - 优先选择 ≥ 400ms 的静音作为切点目标。
+  - 不可避免的口误如果没有更好的 take 则保留。在 "reason" 中注明。
+  - 如果超预算，修正：删一个节拍或收紧结尾。报告总时长并自我纠正。
 
-OUTPUT (JSON array, no prose):
-  [{"source": "C0103", "start": 2.42, "end": 6.85, "beat": "HOOK",
+输出（JSON 数组，无正文）：
+  [{"source": "C0103", "start": 2.42, "end": 6.85, "beat": "钩子",
     "quote": "...", "reason": "..."}, ...]
 
-Return the final EDL and a one-line total runtime check.
+返回最终 EDL 和一行总时长检查。
 ```
 
-## Color grade (when requested)
+## 调色（按需）
 
-Your job is to **reason about the image**, not apply a preset. Look at a frame (via `timeline_view`), decide what's wrong, adjust one thing, look again.
+你的工作是**推理画面**，而非套预设。看一帧（通过 `timeline_view`），判断问题所在，调一个参数，再看。
 
-Mental model is ASC CDL. Per channel: `out = (in * slope + offset) ** power`, then global saturation. `slope` → highlights, `offset` → shadows, `power` → midtones.
+心智模型是 ASC CDL。每通道：`out = (in * slope + offset) ** power`，然后全局饱和度。`slope` → 高光，`offset` → 阴影，`power` → 中间调。
 
-**Example filter chains** (`grade.py` has `--list-presets`; use them as starting points or mix your own):
+**示例滤镜链**（`grade.py` 有 `--list-presets`；以它们为起点或自己组合）：
 
-- **`warm_cinematic`** — retro/technical, subtle teal/orange split, desaturated. Shipped in a real launch video. Safe for talking heads.
-- **`neutral_punch`** — minimal corrective: contrast bump + gentle S-curve. No hue shifts.
-- **`none`** — straight copy. Default when the user hasn't asked.
+- **`warm_cinematic`** — 复古/技术感，微妙的青橙分色，去饱和。在某真实发布视频中使用过。口播安全。
+- **`neutral_punch`** — 最小矫正：对比度增强 + 温和 S 曲线。无色相偏移。
+- **`none`** — 直通。用户未要求时的默认值。
 
-For anything else — portraiture, nature, product, music video, documentary — invent your own chain. `grade.py --filter '<raw ffmpeg>'` accepts any filter string.
+其他类型 — 人像、自然、产品、MV、纪录片 — 自己发明链条。`grade.py --filter '<raw ffmpeg>'` 接受任意滤镜字符串。
 
-Hard rules: apply **per-segment during extraction** (not post-concat, which re-encodes twice). Never go aggressive without testing skin tones.
+硬规则：**在提取时逐段应用**（非拼接后，那会二次编码）。不做皮肤测试不要激进。
 
-## Subtitles (when requested)
+## 字幕（按需）
 
-Subtitles have three dimensions worth reasoning about: **chunking** (1/2/3/sentence per line), **case** (UPPER/Title/Natural), and **placement** (margin from bottom). The right combo depends on content.
+字幕有三个值得推敲的维度：**分块**（每行 1/2/3/整句）、**大小写**（全大写/首字母大写/自然）、**位置**（距底部边距）。正确的组合取决于内容。
 
-**Worked styles** — pick, adapt, or invent:
+**已验证风格** — 选择、改编或自创：
 
-**`bold-overlay`** — short-form tech launch, fast-paced social. 2-word chunks, UPPERCASE, break on punctuation, Helvetica 18 Bold, white-on-outline, `MarginV=35`. `render.py` ships with this as `SUB_FORCE_STYLE`.
+**`bold-overlay`** — 短篇科技发布、快节奏社交。2 词分块、全大写、标点断句、Helvetica 18 Bold、白色描边、`MarginV=35`。`render.py` 以此作为 `SUB_FORCE_STYLE` 内置。
 
 ```
 FontName=Helvetica,FontSize=18,Bold=1,
@@ -255,40 +259,40 @@ BorderStyle=1,Outline=2,Shadow=0,
 Alignment=2,MarginV=35
 ```
 
-**`natural-sentence`** (if you invent this mode) — narrative, documentary, education. 4–7 word chunks, sentence case, break on natural pauses, `MarginV=60–80`, larger font for readability, slightly wider max-width. No shipped force_style — design one if you need it.
+**`natural-sentence`**（如果你发明这种模式）— 叙事、纪录片、教育。4–7 词分块、句首大写、自然停顿断句、`MarginV=60–80`、更大字号以便阅读、稍宽的最大宽度。无内置 force_style — 需要时自己设计。
 
-Invent a third style if neither fits. Hard rules: subtitles LAST (Rule 1), output-timeline offsets (Rule 5).
+如果两种都不合适，发明第三种风格。硬规则：字幕最后（规则 1）、输出时间线偏移（规则 5）。
 
-## Animations (when requested)
+## 动画（按需）
 
-Animations match the content and the brand. **Get the palette, font, and visual language from the conversation** — never assume a default. If the user hasn't told you, propose a palette in the strategy phase and wait for confirmation before building anything.
+动画匹配内容和品牌。**从对话中获取调色板、字体和视觉语言** — 绝不假设默认值。如果用户没有告诉你，在策略阶段提出一个调色板并等待确认再构建任何东西。
 
-**Tool options:**
+**工具选项：**
 
-Pick the engine per animation slot. Do not default to Remotion just because the animation is web-adjacent.
+按动画插槽选择引擎。不要仅仅因为动画是 web 相关的就默认用 Remotion。
 
-- **HyperFrames** — Browser-native HTML/CSS/GSAP video compositions: product UI motion, website-to-video or mockup-to-video captures, kinetic typography, landing-page/storyboard promos, data-driven UI states, transparent WebM overlays, and clips that need deterministic frame capture plus HyperFrames lint/validate/render checks. Best when the animation should be authored and verified like a web composition instead of a React component tree.
-- **Remotion** — React/CSS compositions with component state, reusable React primitives, or an existing Remotion brand system. Best when the user specifically asks for React/Remotion or when React composition is the simpler authoring model.
-- **Manim** — formal diagrams, state machines, equation derivations, graph morphs. Read `skills/manim-video/SKILL.md` and its references for depth.
-- **PIL + PNG sequence + ffmpeg** — simple overlay cards: counters, typewriter text, single bar reveals, progressive draws. Fast to iterate, any aesthetic you want. The launch video used this.
+- **HyperFrames** — 浏览器原生 HTML/CSS/GSAP 视频合成：产品 UI 动效、网站转视频或原型转视频捕捉、动态排版、落地页/故事板宣传片、数据驱动的 UI 状态、透明 WebM 叠层，以及需要确定性帧捕获和 HyperFrames lint/validate/render 检查的片段。当动画应该像 web 合成一样创作和验证，而非 React 组件树时最佳。
+- **Remotion** — 带组件状态的 React/CSS 合成、可复用 React 原语或已有的 Remotion 品牌系统。当用户明确要求 React/Remotion 或 React 合成是更简单的创作模型时最佳。
+- **Manim** — 形式化图表、状态机、公式推导、图形变换。阅读 `skills/manim-video/SKILL.md` 及其参考文献深入了解。
+- **PIL + PNG 序列 + ffmpeg** — 简单叠层卡片：计数器、打字机文字、单条进度条揭示、渐进式绘制。迭代快，任意美学。某发布视频使用此方案。
 
-For HyperFrames slots, scaffold the slot inside `edit/animations/slot_<id>/` with `npx --yes hyperframes init . --example blank --non-interactive --skip-skills`, build the HTML composition there, run the HyperFrames checks that fit the slot (`lint`, `validate`, and a draft render when practical), then produce the final overlay video with `npx --yes hyperframes render . -o render.mp4` or `--format webm -o render.webm` when alpha is required. Point the EDL overlay `file` at the actual rendered path.
+对于 HyperFrames 插槽，在 `edit/animations/slot_<id>/` 内用 `npx --yes hyperframes init . --example blank --non-interactive --skip-skills` 脚手架搭建，在此构建 HTML 合成，运行适合的 HyperFrames 检查（`lint`、`validate`，可行时做草稿渲染），然后用 `npx --yes hyperframes render . -o render.mp4` 或需要 alpha 时用 `--format webm -o render.webm` 生成最终叠层视频。EDL overlay `file` 指向实际渲染路径。
 
-For Remotion slots, keep the Remotion project isolated inside the same slot directory, scaffold with `npx create-video@latest` or install Remotion locally there, render the composition to `render.mp4` with the project-local `remotion render` command, and verify duration and dimensions with `ffprobe`.
+对于 Remotion 插槽，保持 Remotion 项目隔离在同一插槽目录内，用 `npx create-video@latest` 脚手架搭建或在本地安装 Remotion，用项目本地的 `remotion render` 命令渲染合成到 `render.mp4`，并用 `ffprobe` 验证时长和尺寸。
 
-None is mandatory. Invent hybrids if useful (e.g., PIL background with a HyperFrames or Remotion layer on top).
+没有哪个是必须的。有用的话可以发明混合方案（例如 PIL 背景上加 HyperFrames 或 Remotion 层）。
 
-**Duration rules of thumb, context-dependent:**
+**时长经验法则，依赖上下文：**
 
-- **Sync-to-narration explanations.** A viewer needs to parse the content at 1×. Rough floor 3s, typical 5–7s for simple cards, 8–14s for complex diagrams. The launch video shipped at 5–7s per simple card.
-- **Beat-synced accents** (music video, fast montage). 0.5–2s is fine — they're visual accents, not information. The "readable at 1×" rule becomes *"recognizable at 1×"*, not *"fully parseable."*
-- **Hold the final frame ≥ 1s** before the cut (universal).
-- **Over voiceover:** total duration ≥ `narration_length + 1s` (universal).
-- **Never parallel-reveal independent elements** — the eye can't track two new things at once. One thing, pause, next thing.
+- **对齐旁白的解释。** 观众需要以 1 倍速解析内容。简单卡片大约下限 3s，通常 5–7s，复杂图表 8–14s。某发布视频中简单卡片为 5–7s。
+- **节拍同步强调**（MV、快节奏混剪）。0.5–2s 即可 — 它们是视觉强调，不是信息。1 倍速可读规则变成"1 倍速可辨识"，而非"完全可解析"。
+- **最后一帧保持 ≥ 1s** 再切（通用）。
+- **覆盖旁白时：** 总时长 ≥ `旁白长度 + 1s`（通用）。
+- **绝不并行揭示独立元素** — 眼睛无法同时追踪两个新事物。一个、暂停、下一个。
 
-**Animation payoff timing (rule for sync-to-narration):** get the payoff word's timestamp. Start the overlay `reveal_duration` seconds earlier so the landing frame coincides with the spoken payoff word. Without this sync the animation feels disconnected.
+**动画高潮时机（对齐旁白的规则）：** 获取高潮词的精确时间戳。将叠层提前 `reveal_duration` 秒启动，使落定帧与说出高潮词瞬间重合。没有这种同步，动画会感觉脱节。
 
-**Easing** (universal — never `linear`, it looks robotic):
+**缓动**（通用 — 绝不用 `linear`，看起来像机器人）：
 
 ```python
 def ease_out_cubic(t):    return 1 - (1 - t) ** 3
@@ -297,40 +301,40 @@ def ease_in_out_cubic(t):
     return 1 - (-2 * t + 2) ** 3 / 2
 ```
 
-`ease_out_cubic` for single reveals (slow landing). `ease_in_out_cubic` for continuous draws.
+`ease_out_cubic` 用于单个揭示（缓慢落定）。`ease_in_out_cubic` 用于连续绘制。
 
-**Typing text anchor trick:** center on the FULL string's width, not the partial-string width — otherwise text slides left during reveal.
+**打字文字锚点技巧：** 以完整字符串的宽度居中，而非部分字符串宽度 — 否则文字会在揭示时向左滑动。
 
-**Example palette** (the launch video — one aesthetic among infinite):
-- Background `(10, 10, 10)` near-black
-- Accent `#FF5A00` / `(255, 90, 0)` orange
-- Labels `(110, 110, 110)` dim gray
-- Font: Menlo Bold at `/System/Library/Fonts/Menlo.ttc` (index 1)
-- ≤ 2 accent colors, ~40% empty space, minimal chrome
-- Result: terminal / retro tech feel
+**示例调色板**（某发布视频 — 无限美学中的一种）：
+- 背景 `(10, 10, 10)` 近黑
+- 强调色 `#FF5A00` / `(255, 90, 0)` 橙色
+- 标签 `(110, 110, 110)` 暗灰
+- 字体：Menlo Bold 在 `/System/Library/Fonts/Menlo.ttc`（索引 1）
+- ≤ 2 个强调色，~40% 留白，极简装饰
+- 效果：终端 / 复古科技感
 
-This is one style. If the brand is warm and serif, use that. If it's colorful and playful, use that. If the user handed you a style guide, follow it. If they didn't, propose one and confirm.
+这是一种风格。如果品牌是温暖衬线，用那个。如果品牌是多彩活泼，用那个。如果用户给了你风格指南，遵循它。如果没给，提出一个并确认。
 
-**Parallel sub-agent brief** — each animation is one sub-agent spawned via the `Agent` tool. Each prompt is self-contained (sub-agents have no parent context). Include:
+**并行子代理简报** — 每个动画是一个通过 `Agent` 工具生成的子代理。每个提示自包含（子代理无父级上下文）。包括：
 
-1. One-sentence goal: *"Build ONE animation: [spec]. Nothing else."*
-2. Absolute output path (`<edit>/animations/slot_<id>/render.mp4`)
-3. Exact technical spec: resolution, fps, codec, pix_fmt, CRF, duration
-4. Style palette as concrete values (RGB tuples, hex, or reference to a design system)
-5. Font path with index
-6. Frame-by-frame timeline (what happens when, with easing)
-7. Anti-list ("no chrome, no extras, no titles unless specified")
-8. Code pattern reference (copy helpers inline, don't import across slots)
-9. Deliverable checklist (script, render, verify duration via ffprobe, report)
-10. **"Do not ask questions. If anything is ambiguous, pick the most obvious interpretation and proceed."**
+1. 一句话目标：*"构建一个动画：[规格]。其他什么都不要。"*
+2. 绝对输出路径（`<edit>/animations/slot_<id>/render.mp4`）
+3. 精确技术规格：分辨率、fps、编解码器、pix_fmt、CRF、时长
+4. 风格调色板为具体数值（RGB 元组、hex 或设计系统引用）
+5. 字体路径带索引
+6. 逐帧时间线（何时发生什么，带缓动）
+7. 排除清单（"无装饰、无额外元素、除非指定否则无标题"）
+8. 代码模式参考（内联复制 helpers，不要跨插槽导入）
+9. 交付清单（脚本、渲染、ffprobe 验证时长、报告）
+10. **"不要提问。如果有任何歧义，选择最明显的解读并继续。"**
 
-One sub-agent = one file (unique filenames, parallel agents don't overwrite each other).
+一个子代理 = 一个文件（唯一文件名，并行代理不会互相覆盖）。
 
-## Output spec
+## 输出规格
 
-Match the source unless the user asked for something specific. Common targets: `1920×1080@24` cinematic, `1920×1080@30` screen content, `1080×1920@30` vertical social, `3840×2160@24` 4K cinema, `1080×1080@30` square. `render.py` defaults the scale to 1080p from any source; pass `--filter` or edit the extract command for other targets. Worth asking the user which delivery format matters.
+匹配源素材，除非用户有特殊要求。常见目标：`1920×1080@24` 电影感、`1920×1080@30` 屏幕内容、`1080×1920@30` 竖屏社交、`3840×2160@24` 4K 影院、`1080×1080@30` 方形。`render.py` 默认从任意源缩放到 1080p；传递 `--filter` 或编辑提取命令实现其他目标。值得问用户哪种交付格式重要。
 
-## EDL format
+## EDL 格式
 
 ```json
 {
@@ -338,9 +342,9 @@ Match the source unless the user asked for something specific. Common targets: `
   "sources": {"C0103": "/abs/path/C0103.MP4", "C0108": "/abs/path/C0108.MP4"},
   "ranges": [
     {"source": "C0103", "start": 2.42, "end": 6.85,
-     "beat": "HOOK", "quote": "...", "reason": "Cleanest delivery, stops before slip at 38.46."},
+     "beat": "钩子", "quote": "...", "reason": "最干净的表达，在 38.46 的失误前停止。"},
     {"source": "C0108", "start": 14.30, "end": 28.90,
-     "beat": "SOLUTION", "quote": "...", "reason": "Only take without the false start."}
+     "beat": "解决方案", "quote": "...", "reason": "唯一没有嘴瓢的 take。"}
   ],
   "bgm": {
     "file": "edit/bgm.mp3",
@@ -359,37 +363,37 @@ Match the source unless the user asked for something specific. Common targets: `
 }
 ```
 
-`grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST. `bgm` is optional — when present, BGM is mixed into the audio after compositing and before loudnorm.
+`grade` 是预设名称或原始 ffmpeg 滤镜。`overlays` 是渲染好的动画片段。`subtitles` 可选且最后应用。`bgm` 可选 — 存在时，BGM 在合成后、loudnorm 前混入音频。
 
-## Memory — `project.md`
+## 记忆 — `project.md`
 
-Append one section per session at `<edit>/project.md`:
+每次会话在 `<edit>/project.md` 追加一个段落：
 
 ```markdown
-## Session N — YYYY-MM-DD
+## 会话 N — YYYY-MM-DD
 
-**Strategy:** one paragraph describing the approach
-**Decisions:** take choices, cuts, grades, animations + why
-**Reasoning log:** one-line rationale for non-obvious decisions
-**Outstanding:** deferred items
+**策略：** 一段话描述方案
+**决策：** take 选择、剪切、调色、动画 + 原因
+**推理日志：** 非常规决策的一行理由
+**待办：** 推迟事项
 ```
 
-On startup, read `project.md` if it exists and summarize the last session in one sentence before asking whether to continue.
+启动时，如果 `project.md` 存在，读取它并用一句话总结上次会话，然后询问是否继续。
 
-## Anti-patterns
+## 反模式
 
-Things that consistently fail regardless of style:
+无论什么风格都持续失败的做法：
 
-- **Hierarchical pre-computed codec formats** with USABILITY / tone tags / shot layers. Over-engineering. Derive from the transcript at decision time.
-- **Hand-tuned moment-scoring functions.** The LLM picks better than any heuristic you'll write.
-- **Whisper SRT / phrase-level output.** Loses sub-second gap data. Always word-level verbatim.
-- **Running Whisper locally on CPU.** Slow and it normalizes fillers. Use hosted Scribe.
-- **Burning subtitles into base before compositing overlays.** Overlays hide them. (Hard Rule 1.)
-- **Single-pass filtergraph when you have overlays.** Double re-encodes. Use per-segment extract → concat.
-- **Linear animation easing.** Looks robotic. Always cubic.
-- **Hard audio cuts at segment boundaries.** Audible pops. (Hard Rule 3.)
-- **Typing text centered on the partial string.** Text slides left as it grows.
-- **Sequential sub-agents for multiple animations.** Always parallel.
-- **Editing before confirming the strategy.** Never.
-- **Re-transcribing cached sources.** Immutable outputs of immutable inputs.
-- **Assuming what kind of video it is.** Look first, ask second, edit last.
+- **带可用性/语气标签/镜头层级的层级预计算编解码格式。** 过度工程。在决策时从转录中推导。
+- **手工调参的时刻评分函数。** LLM 的选择优于你写的任何启发式。
+- **Whisper SRT / 短语级输出。** 丢失亚秒级间隙数据。始终用词级逐字。
+- **在 CPU 上本地运行 Whisper。** 慢且标准化填充词。使用托管 Scribe。
+- **在合成叠层之前将字幕烧录到基础层。** 叠层遮住字幕。（硬规则 1。）
+- **有叠层时使用单次滤镜图。** 双重编码。使用逐段提取 → 拼接。
+- **线性动画缓动。** 看起来像机器人。始终三次方。
+- **段落边界硬切音频。** 可闻爆音。（硬规则 3。）
+- **以部分字符串居中打字文字。** 文字增长时向左滑动。
+- **多个动画串行子代理。** 始终并行。
+- **确认策略前剪辑。** 绝不。
+- **重新转录已缓存的源。** 不可变输入的不可变输出。
+- **假设这是什么类型的视频。** 先看、再问、最后剪。

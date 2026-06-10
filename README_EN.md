@@ -91,7 +91,7 @@ The LLM never watches the video. It **reads** it — through two layers that tog
   <img src="static/timeline-view.svg" alt="timeline_view composite — filmstrip + speaker track + waveform + word labels + silence-gap cut candidates" width="100%">
 </p>
 
-**Layer 1 — Audio transcript (always loaded).** One ElevenLabs Scribe call per source gives word-level timestamps, speaker diarization, and audio events (`(laughter)`, `(applause)`, `(sigh)`). All takes pack into a single ~12KB `takes_packed.md` — the LLM's primary reading view.
+**Layer 1 — Audio transcript (always loaded).** Supports a **dual ASR backend**: ElevenLabs Scribe (preferred for English) and Volcengine BigASR Turbo (preferred for Chinese). `transcribe.py` auto-selects the available backend, or you can specify with `--asr`. Each source call returns word-level timestamps, speaker diarization, and audio events (`(laughter)`, `(applause)`, `(sigh)`). All takes pack into a single ~12KB `takes_packed.md` — the LLM's primary reading view.
 
 ```
 ## C0103  (duration: 43.0s, 8 phrases)
@@ -105,6 +105,17 @@ The LLM never watches the video. It **reads** it — through two layers that tog
 > Video Use: **12KB text + a handful of PNGs**.
 
 Same idea as browser-use giving an LLM a structured DOM instead of a screenshot — but for video.
+
+### Visual-first approach for silent aerial footage
+
+For **speechless** footage (drone aerials, travel vlogs, scenic montages), there's no transcript for the LLM to read. video-use falls back to a **visual-first** highlight detection pipeline:
+
+1. **Shot segmentation** — PySceneDetect (AdaptiveDetector) splits long videos into individual shots at scene boundaries
+2. **Quality pre-screen** — OpenCV checks each shot for blur (Laplacian), exposure, motion, and black frames, filtering out 30-50% of low-quality shots
+3. **VLM scene understanding** — Native video understanding via Xiaomi MiMo or MiniMax-M3 vision models describes each passing shot (not single-frame screenshots)
+4. **LLM scoring** — Ranks highlights by aesthetic quality and thematic relevance, outputting `highlights.json`
+
+The highlight output is directly compatible with edl.json `source/start/end` fields — the LLM can plan cuts using highlights just as it uses transcripts for speech content. Combined with BGM beat detection and audio mixing, this forms a complete silent aerial editing pipeline.
 
 ## Pipeline
 
